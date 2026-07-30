@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Broadcast3D Cloud</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">3D</div>
+        <div><strong>Broadcast3D Cloud</strong><span>Overlay 3D para vMix · GitHub + Cloudflare</span></div>
+      </div>
+      <div class="top-actions cloud-top-actions">
+        <span id="connectionBadge" class="status-badge">Conectando</span>
+        <span id="roomBadge" class="status-badge status-room">SALA STUDIO</span>
+        <label class="cloud-field"><span>Sala</span><input id="roomInput" type="text" value="studio" maxlength="64" autocomplete="off"></label>
+        <label class="cloud-field"><span>Chave</span><input id="tokenInput" type="password" autocomplete="off" placeholder="opcional"></label>
+        <button id="connectRoomButton" class="button secondary" type="button">Conectar</button>
+        <button id="importProjectButton" class="button secondary" type="button">Importar</button>
+        <button id="exportProjectButton" class="button secondary" type="button">Exportar</button>
+        <button id="openProgramButton" class="button primary" type="button">Abrir overlay</button>
+        <input id="importProjectInput" type="file" accept="application/json,.json" hidden>
+      </div>
+    </header>
+
+    <section class="camera-strip" id="cameraStrip" aria-label="Presets de câmera"></section>
+
+    <main class="workspace">
+      <aside class="sidebar left-panel">
+        <section class="panel-section">
+          <div class="section-title"><span>Cena</span><span id="lockBadge" class="pill locked">TRAVADO</span></div>
+          <label class="field">Nome do projeto<input id="projectName" type="text"></label>
+          <div class="layer-list">
+            <div class="layer-row"><span>◈</span><span>Base PNG extrudada</span><b>🔒</b></div>
+            <div class="layer-row"><span>▥</span><span>Barras do CSV</span><b>🔒</b></div>
+            <div class="layer-row"><span>◉</span><span>Imagens ilustrativas</span><b>🔒</b></div>
+            <div class="layer-row"><span>T</span><span>Valores e nomes</span><b>🔒</b></div>
+            <div class="layer-row"><span>⌖</span><span>Âncora no chão</span><b>🔒</b></div>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-title"><span>Âncora do objeto</span></div>
+          <div class="form-grid two">
+            <label class="field">Posição X<input id="anchorX" type="number" step="0.1"></label>
+            <label class="field">Posição Z<input id="anchorZ" type="number" step="0.1"></label>
+            <label class="field">Rotação Y<input id="anchorRotation" type="number" step="1"></label>
+            <label class="field">Escala<input id="anchorScale" type="number" step="0.05" min="0.1"></label>
+          </div>
+          <label class="switch-row"><input id="anchorLocked" type="checkbox"><span>Bloquear transformações ao vivo</span></label>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-title"><span>Dados</span></div>
+          <label class="upload-drop" for="csvInput"><strong>Importar CSV</strong><span>nome, valor, cor</span></label>
+          <input id="csvInput" type="file" accept=".csv,text/csv" hidden>
+          <button id="downloadCsvButton" class="button secondary full" type="button">Baixar CSV de exemplo</button>
+          <p class="helper">A altura muda conforme o valor. O objeto e a base permanecem fixos.</p>
+        </section>
+
+        <section class="panel-section compact-status">
+          <div><span>Render</span><b>WebGL 2</b></div>
+          <div><span>Saída</span><b>Alpha transparente</b></div>
+          <div><span>Sincronização</span><b>WebSocket</b></div>
+        </section>
+      </aside>
+
+      <section class="preview-column">
+        <div class="preview-toolbar">
+          <div><strong id="previewCameraName">Câmera 1 — Enquadramento A</strong><span>Arraste para orbitar · Shift + arraste para mover · Scroll para zoom</span></div>
+          <div class="preview-actions">
+            <button id="resetViewButton" class="button secondary" type="button">Recarregar preset</button>
+            <button id="saveCameraButton" class="button primary" type="button">Salvar enquadramento</button>
+          </div>
+        </div>
+        <div id="previewStage" class="preview-stage">
+          <div class="studio-backdrop"></div>
+          <img id="guideImage" class="guide-image" alt="Guia de alinhamento da câmera">
+          <canvas id="previewCanvas" aria-label="Prévia do gráfico 3D"></canvas>
+          <div class="anchor-status"><span class="dot green"></span> OBJETO FIXO NO CHÃO</div>
+          <div id="saveToast" class="save-toast" aria-live="polite">Projeto salvo</div>
+        </div>
+        <div class="program-bar">
+          <div class="program-status"><span class="dot red"></span><strong>PROGRAMA</strong><span id="programCameraLabel">CAM 1</span></div>
+          <div class="program-controls">
+            <button id="toggleOutputButton" class="button danger" type="button">Ocultar gráfico</button>
+            <button class="cut-button" data-cut="1" type="button">CUT 1</button>
+            <button class="cut-button" data-cut="2" type="button">CUT 2</button>
+            <button class="cut-button" data-cut="3" type="button">CUT 3</button>
+            <button class="cut-button" data-cut="4" type="button">CUT 4</button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="sidebar right-panel">
+        <nav class="tabs" aria-label="Painéis">
+          <button class="tab active" data-tab="camera" type="button">Câmera</button>
+          <button class="tab" data-tab="base" type="button">Base</button>
+          <button class="tab" data-tab="bars" type="button">Barras</button>
+          <button class="tab" data-tab="streamdeck" type="button">Stream Deck</button>
+        </nav>
+
+        <section class="tab-panel active" data-panel="camera">
+          <div class="section-title"><span>Preset selecionado</span><span id="selectedCameraPill" class="pill">CAM 1</span></div>
+          <label class="field">Nome<input id="cameraName" type="text"></label>
+          <div class="form-grid two">
+            <label class="field">Yaw<input id="cameraYaw" type="number" step="0.1"></label>
+            <label class="field">Pitch<input id="cameraPitch" type="number" step="0.1"></label>
+            <label class="field">Distância<input id="cameraDistance" type="number" step="0.1" min="1"></label>
+            <label class="field">FOV<input id="cameraFov" type="number" step="1" min="15" max="100"></label>
+            <label class="field">Alvo X<input id="targetX" type="number" step="0.1"></label>
+            <label class="field">Alvo Y<input id="targetY" type="number" step="0.1"></label>
+            <label class="field">Alvo Z<input id="targetZ" type="number" step="0.1"></label>
+          </div>
+          <div class="divider"></div>
+          <div class="section-title"><span>Guia de alinhamento</span></div>
+          <label class="upload-drop" for="guideInput"><strong>Adicionar frame da câmera</strong><span>Usado apenas na prévia</span></label>
+          <input id="guideInput" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+          <label class="range-field">Opacidade do guia <output id="guideOpacityOutput"></output><input id="guideOpacity" type="range" min="0" max="1" step="0.01"></label>
+          <button id="removeGuideButton" class="button secondary full" type="button">Remover guia</button>
+        </section>
+
+        <section class="tab-panel" data-panel="base">
+          <div class="section-title"><span>Base PNG</span></div>
+          <label class="upload-drop" for="baseInput"><strong>Carregar PNG transparente</strong><span>A silhueta vira uma base extrudada</span></label>
+          <input id="baseInput" type="file" accept="image/png" hidden>
+          <label class="range-field">Extrusão <output id="baseThicknessOutput"></output><input id="baseThickness" type="range" min="0.05" max="1.5" step="0.01"></label>
+          <label class="range-field">Tamanho <output id="baseScaleOutput"></output><input id="baseScale" type="range" min="3" max="15" step="0.1"></label>
+          <label class="range-field">Leitura do recorte <output id="alphaThresholdOutput"></output><input id="alphaThreshold" type="range" min="0.02" max="0.8" step="0.01"></label>
+          <label class="field color-field">Cor lateral<input id="baseColor" type="color"></label>
+          <p class="helper">Para obter o contorno correto, use um PNG com fundo transparente.</p>
+        </section>
+
+        <section class="tab-panel" data-panel="bars">
+          <div class="section-title"><span>Geometria</span></div>
+          <label class="range-field">Largura das barras <output id="barWidthOutput"></output><input id="barWidth" type="range" min="0.2" max="2.2" step="0.02"></label>
+          <label class="range-field">Profundidade <output id="barDepthOutput"></output><input id="barDepth" type="range" min="0.2" max="2" step="0.02"></label>
+          <label class="range-field">Altura máxima <output id="barHeightOutput"></output><input id="barHeight" type="range" min="1" max="8" step="0.1"></label>
+          <label class="range-field">Espaçamento <output id="barGapOutput"></output><input id="barGap" type="range" min="0" max="2" step="0.02"></label>
+          <label class="range-field">Escala das imagens <output id="imageScaleOutput"></output><input id="imageScale" type="range" min="0.4" max="2.2" step="0.02"></label>
+          <label class="range-field">Escala dos textos <output id="labelScaleOutput"></output><input id="labelScale" type="range" min="0.5" max="1.8" step="0.02"></label>
+          <div class="divider"></div>
+          <div class="section-title"><span>Itens e imagens</span></div>
+          <div id="barItems" class="bar-items"></div>
+        </section>
+
+        <section class="tab-panel" data-panel="streamdeck">
+          <div class="section-title"><span>Corte por Stream Deck</span><span class="pill ready">CLOUD</span></div>
+          <p class="helper strong">Cada link ativa a perspectiva virtual correspondente. Use uma Multi Action: primeiro corte a câmera no vMix e depois abra o endpoint da mesma câmera.</p>
+          <div class="endpoint-list cloud-endpoints">
+            <div><span>Câmera 1</span><code id="cutEndpoint1"></code><button data-api-cut="1" type="button">Testar</button></div>
+            <div><span>Câmera 2</span><code id="cutEndpoint2"></code><button data-api-cut="2" type="button">Testar</button></div>
+            <div><span>Câmera 3</span><code id="cutEndpoint3"></code><button data-api-cut="3" type="button">Testar</button></div>
+            <div><span>Câmera 4</span><code id="cutEndpoint4"></code><button data-api-cut="4" type="button">Testar</button></div>
+            <div><span>Exibir/ocultar</span><code id="toggleEndpoint"></code><button id="toggleEndpointButton" type="button" disabled>URL</button></div>
+          </div>
+          <div class="divider"></div>
+          <label class="field">Overlay transparente para vMix<input id="programUrl" type="text" readonly></label>
+          <button id="copyProgramUrlButton" class="button secondary full" type="button">Selecionar link</button>
+          <p class="helper">Adicione este endereço como Web Browser Input no vMix e mantenha-o no Overlay sobre o PGM.</p>
+        </section>
+      </aside>
+    </main>
+  </div>
+  <script type="module" src="/js/operator.js"></script>
+</body>
+</html>
