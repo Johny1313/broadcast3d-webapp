@@ -17,7 +17,7 @@ function json(data, status = 200, extraHeaders = {}) {
 
 function defaultState() {
   return {
-    version: 7,
+    version: 8,
     projectName: 'Projeto 3D - Eleições',
     activeCamera: 1,
     selectedCamera: 1,
@@ -63,12 +63,18 @@ function defaultState() {
         type: 'google-sheets',
         url: '',
         gid: '0',
+        range: '',
+        mappingMode: 'auto',
+        firstRowHeader: true,
+        columns: { name: 'A', value: 'B', color: 'C', image: 'D' },
         autoRefresh: true,
         refreshSeconds: 5,
         lastUpdated: '',
         lastRowCount: 0,
         lastError: '',
-        lastSourceUrl: ''
+        lastSourceUrl: '',
+        lastRange: '',
+        lastMapping: null
       },
       guideOpacity: 0.72
     },
@@ -85,7 +91,7 @@ function normalizeState(input) {
   const defaults = defaultState();
   const state = structuredClone(input && typeof input === 'object' ? input : defaults);
   const previousVersion = Number(state.version || 0);
-  state.version = 7;
+  state.version = 8;
   state.projectName ||= defaults.projectName;
   state.activeCamera = Number(state.activeCamera || 1);
   state.selectedCamera = Number(state.selectedCamera || state.activeCamera || 1);
@@ -105,6 +111,10 @@ function normalizeState(input) {
   if (previousVersion > 0 && previousVersion < 6 && state.scene.model.url && state.scene.generatedGraphVisible === false) state.scene.generatedGraphVisible = true;
   state.scene.playback = { ...defaults.scene.playback, ...(state.scene.playback || {}) };
   state.scene.dataSource = { ...defaults.scene.dataSource, ...(state.scene.dataSource || {}) };
+  state.scene.dataSource.columns = { ...defaults.scene.dataSource.columns, ...(state.scene.dataSource.columns || {}) };
+  state.scene.dataSource.mappingMode = state.scene.dataSource.mappingMode === 'manual' ? 'manual' : 'auto';
+  state.scene.dataSource.firstRowHeader = state.scene.dataSource.firstRowHeader !== false;
+  state.scene.dataSource.range = String(state.scene.dataSource.range || '').trim().toUpperCase();
   state.scene.guideOpacity = Number(state.scene.guideOpacity ?? defaults.scene.guideOpacity);
   const cameras = Array.isArray(state.cameras) ? state.cameras : [];
   state.cameras = defaults.cameras.map(base => {
@@ -185,21 +195,129 @@ function inferColumn(rows, excluded = new Set(), mode = 'text') {
   return best;
 }
 
-function rowsToItems(rows) {
-  if (!Array.isArray(rows) || rows.length < 2) throw new Error('A planilha precisa ter cabeçalho e pelo menos uma linha de dados.');
-  const headers = rows[0].map(normalizeHeader);
+function columnLabelToIndex(value) {
+  const label = String(value || '').trim().toUpperCase();
+  if (!/^[A-Z]+$/.test(label)) return -1;
+  let result = 0;
+  for (const char of label) result = result * 26 + char.charCodeAt(0) - 64;
+  return result - 1;
+}
+
+function columnIndexToLabel(index) {
+  let value = Number(index) + 1;
+  if (!Number.isInteger(value) || value < 1) return '';
+  let label = '';
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    label = String.fromCharCode(65 + remainder) + label;
+    value = Math.floor((value - 1) / 26);
+  }
+  return label;
+}
+
+function parseA1Range(value) {
+  const rawInput = String(value || '').trim().toUpperCase();
+  const raw = rawInput.includes('!') ? rawInput.split('!').at(-1) : rawInput;
+  if (!raw) return { raw: '', startRow: 0, endRow: Number.POSITIVE_INFINITY, startColumn: 0, endColumn: Number.POSITIVE_INFINITY };
+  const parts = raw.split(':');
+  if (parts.length > 2 || parts.some(part => !/^[A-Z]*\d*$/.test(part)) || parts.every(part => !part)) {
+    throw new Error('Intervalo inválido. Use a notação A1, por exemplo A2:F20, B:D ou 3:12.');
+  }
+  const parsePart = part => {
+    const match = String(part || '').match(/^([A-Z]*)(\d*)$/);
+    return {
+      column: match?.[1] ? columnLabelToIndex(match[1]) : null,
+      row: match?.[2] ? Number(match[2]) - 1 : null
+    };
+  };
+  const left = parsePart(parts[0]);
+  const right = parsePart(parts[1] || '');
+  if ((left.row !== null && left.row < 0) || (right.row !== null && right.row < 0)) throw new Error('As linhas do intervalo começam em 1.');
+  const hasRange = parts.length === 2;
+  const startColumn = left.column ?? 0;
+  const startRow = left.row ?? 0;
+  const endColumn = right.column !== null ? right.column + 1 : hasRange ? Number.POSITIVE_INFINITY : left.column !== null ? left.column + 1 : Number.POSITIVE_INFINITY;
+  const endRow = right.row !== null ? right.row + 1 : hasRange ? Number.POSITIVE_INFINITY : left.row !== null ? left.row + 1 : Number.POSITIVE_INFINITY;
+  if (endColumn <= startColumn || endRow <= startRow) throw new Error('O final do intervalo precisa vir depois do início.');
+  return { raw, startRow, endRow, startColumn, endColumn };
+}
+
+function normalizeSheetReadConfig(input = {}) {
+  const columns = input.columns && typeof input.columns === 'object' ? input.columns : {};
+  const cleanColumn = (value, fallback = '') => {
+    const label = String(value || fallback).trim().toUpperCase().replace(/[^A-Z]/g, '');
+    return label;
+  };
+  return {
+    range: String(input.range || '').trim().toUpperCase(),
+    mappingMode: input.mappingMode === 'manual' ? 'manual' : 'auto',
+    firstRowHeader: input.firstRowHeader !== false,
+    columns: {
+      name: cleanColumn(columns.name, 'A'),
+      value: cleanColumn(columns.value, 'B'),
+      color: cleanColumn(columns.color, ''),
+      image: cleanColumn(columns.image, '')
+    }
+  };
+}
+
+function selectSheetRows(rows, rangeValue) {
+  const range = parseA1Range(rangeValue);
+  const rowEnd = Number.isFinite(range.endRow) ? Math.min(rows.length, range.endRow) : rows.length;
+  const selectedRows = rows.slice(range.startRow, rowEnd).map(row => {
+    const columnEnd = Number.isFinite(range.endColumn) ? Math.min(row.length, range.endColumn) : row.length;
+    return row.slice(range.startColumn, columnEnd);
+  });
+  if (!selectedRows.length) throw new Error(`O intervalo ${range.raw || 'informado'} não contém linhas.`);
+  return { rows: selectedRows, range, rowOffset: range.startRow, columnOffset: range.startColumn };
+}
+
+function rowsToItems(rows, readConfig = {}) {
+  if (!Array.isArray(rows) || !rows.length) throw new Error('A planilha não contém dados.');
+  const config = normalizeSheetReadConfig(readConfig);
+  const selected = selectSheetRows(rows, config.range);
+  if (!selected.rows.length) throw new Error('Nenhuma linha foi encontrada no intervalo selecionado.');
+
+  const firstRowHeader = config.firstRowHeader;
+  const syntheticHeader = selected.rows[0].map((_, index) => columnIndexToLabel(selected.columnOffset + index));
+  const workingRows = firstRowHeader ? selected.rows : [syntheticHeader, ...selected.rows];
+  if (workingRows.length < 2) throw new Error('O intervalo precisa conter pelo menos uma linha de dados além do cabeçalho.');
+  const headers = workingRows[0].map(normalizeHeader);
   const find = names => headers.findIndex(header => names.includes(header));
-  let nameIndex = find(['nome', 'name', 'item', 'categoria', 'candidato', 'rotulo', 'label', 'titulo', 'descricao']);
-  let valueIndex = find(['valor', 'value', 'total', 'percentual', 'porcentagem', 'percent', '%', 'resultado', 'quantidade', 'numero', 'pontuacao', 'score', 'dados']);
-  const colorIndex = find(['cor', 'color', 'hex', 'colour']);
-  const imageIndex = find(['imagem', 'image', 'imagem_url', 'image_url', 'foto', 'icone', 'icon', 'avatar', 'photo']);
-  if (valueIndex < 0) valueIndex = inferColumn(rows, new Set(), 'number');
-  if (nameIndex < 0) nameIndex = inferColumn(rows, new Set(valueIndex >= 0 ? [valueIndex] : []), 'text');
+
+  let nameIndex;
+  let valueIndex;
+  let colorIndex;
+  let imageIndex;
+  if (config.mappingMode === 'manual') {
+    const localIndex = label => {
+      const absolute = columnLabelToIndex(label);
+      if (absolute < 0) return -1;
+      return absolute - selected.columnOffset;
+    };
+    nameIndex = localIndex(config.columns.name);
+    valueIndex = localIndex(config.columns.value);
+    colorIndex = localIndex(config.columns.color);
+    imageIndex = localIndex(config.columns.image);
+    const width = Math.max(0, ...selected.rows.map(row => row.length));
+    if (nameIndex < 0 || nameIndex >= width) throw new Error(`A coluna de nome (${config.columns.name || '—'}) está fora do intervalo selecionado.`);
+    if (valueIndex < 0 || valueIndex >= width) throw new Error(`A coluna de valor (${config.columns.value || '—'}) está fora do intervalo selecionado.`);
+    if (colorIndex < 0 || colorIndex >= width) colorIndex = -1;
+    if (imageIndex < 0 || imageIndex >= width) imageIndex = -1;
+  } else {
+    nameIndex = find(['nome', 'name', 'item', 'categoria', 'candidato', 'rotulo', 'label', 'titulo', 'descricao']);
+    valueIndex = find(['valor', 'value', 'total', 'percentual', 'porcentagem', 'percent', '%', 'resultado', 'quantidade', 'numero', 'pontuacao', 'score', 'dados']);
+    colorIndex = find(['cor', 'color', 'hex', 'colour']);
+    imageIndex = find(['imagem', 'image', 'imagem_url', 'image_url', 'foto', 'icone', 'icon', 'avatar', 'photo']);
+    if (valueIndex < 0) valueIndex = inferColumn(workingRows, new Set(), 'number');
+    if (nameIndex < 0) nameIndex = inferColumn(workingRows, new Set(valueIndex >= 0 ? [valueIndex] : []), 'text');
+  }
+
   if (nameIndex < 0 || valueIndex < 0 || nameIndex === valueIndex) {
-    throw new Error('Não encontrei as colunas de nome e valor. Use os cabeçalhos nome e valor, ou deixe a primeira coluna como texto e a segunda como número.');
+    throw new Error('Não encontrei as colunas de nome e valor. Selecione o modo manual e indique as letras das colunas.');
   }
   const palette = ['#3567d7', '#10a9a6', '#7650a8', '#e9781b', '#d54b63', '#3b9d5d'];
-  const items = rows.slice(1).filter(row => row.some(cell => String(cell || '').trim() !== '')).map((row, index) => {
+  const items = workingRows.slice(1).filter(row => row.some(cell => String(cell || '').trim() !== '')).map((row, index) => {
     const name = String(row[nameIndex] || '').trim();
     const value = parseNumber(row[valueIndex]);
     if (!name || !Number.isFinite(value)) return null;
@@ -207,15 +325,39 @@ function rowsToItems(rows) {
     const color = /^#[0-9a-f]{6}$/i.test(rawColor) ? rawColor : palette[index % palette.length];
     const imageUrl = imageIndex >= 0 ? String(row[imageIndex] || '').trim() : '';
     return {
-      id: `${normalizeHeader(name) || 'item'}-${index}`,
+      id: `${normalizeHeader(name) || 'item'}-${selected.rowOffset + index}`,
       name,
       value,
       color,
       imageUrl: /^https:\/\//i.test(imageUrl) ? imageUrl : ''
     };
   }).filter(Boolean).slice(0, 32);
-  if (!items.length) throw new Error('A planilha foi lida, mas nenhuma linha válida foi encontrada. Verifique se nome e valor estão preenchidos.');
-  return { headers, items, mapping: { nameIndex, valueIndex, colorIndex, imageIndex } };
+  if (!items.length) throw new Error('Nenhuma linha válida foi encontrada no intervalo. Verifique as linhas, as colunas e os valores.');
+  const absoluteLabel = localIndex => localIndex >= 0 ? columnIndexToLabel(selected.columnOffset + localIndex) : '';
+  return {
+    headers,
+    items,
+    mapping: {
+      mode: config.mappingMode,
+      nameIndex,
+      valueIndex,
+      colorIndex,
+      imageIndex,
+      nameColumn: absoluteLabel(nameIndex),
+      valueColumn: absoluteLabel(valueIndex),
+      colorColumn: absoluteLabel(colorIndex),
+      imageColumn: absoluteLabel(imageIndex)
+    },
+    selection: {
+      range: selected.range.raw,
+      firstRowHeader,
+      firstDataRow: selected.rowOffset + (firstRowHeader ? 2 : 1),
+      selectedRows: selected.rows.length,
+      startColumn: columnIndexToLabel(selected.columnOffset),
+      endColumn: Number.isFinite(selected.range.endColumn) ? columnIndexToLabel(selected.range.endColumn - 1) : ''
+    },
+    readConfig: config
+  };
 }
 
 function sheetIdentity(source, requestedGid = '0') {
@@ -264,7 +406,7 @@ function googleSheetCandidates(source, requestedGid = '0') {
   return { ...identity, candidates: unique };
 }
 
-async function fetchGoogleSheet(source, gid) {
+async function fetchGoogleSheet(source, gid, readConfig = {}) {
   const identity = googleSheetCandidates(source, gid);
   const attempts = [];
   for (const target of identity.candidates) {
@@ -279,7 +421,7 @@ async function fetchGoogleSheet(source, gid) {
       attempts.push({ endpoint: target.pathname, status: response.status, contentType: response.headers.get('content-type') || '' });
       if (!response.ok) continue;
       if (/<!doctype html|<html/i.test(text) || /sign in|request access|solicitar acesso/i.test(text)) continue;
-      const parsed = rowsToItems(parseCsvRows(text));
+      const parsed = rowsToItems(parseCsvRows(text), readConfig);
       return { ...parsed, sourceUrl: target.toString(), gid: identity.gid, attempts };
     } catch (error) {
       attempts.push({ endpoint: target.pathname, status: 0, error: error.message || 'falha de rede' });
@@ -352,7 +494,7 @@ export default {
       return json({
         ok: true,
         service: 'broadcast3d-cloudflare',
-        version: '0.7.0',
+        version: '0.8.0',
         realtime: 'durable-object-websocket',
         storage: 'durable-object-sqlite + r2',
         mediaBucket: Boolean(env.MEDIA_BUCKET),
@@ -431,7 +573,17 @@ export default {
       try {
         const source = url.searchParams.get('source') || '';
         const gid = url.searchParams.get('gid') || '0';
-        const result = await fetchGoogleSheet(source, gid);
+        const result = await fetchGoogleSheet(source, gid, {
+          range: url.searchParams.get('range') || '',
+          mappingMode: url.searchParams.get('mappingMode') || 'auto',
+          firstRowHeader: url.searchParams.get('firstRowHeader') !== 'false',
+          columns: {
+            name: url.searchParams.get('nameColumn') || 'A',
+            value: url.searchParams.get('valueColumn') || 'B',
+            color: url.searchParams.get('colorColumn') || 'C',
+            image: url.searchParams.get('imageColumn') || 'D'
+          }
+        });
         return json({ ok: true, ...result, fetchedAt: new Date().toISOString() });
       } catch (error) {
         return json({ ok: false, error: error.message || 'Falha ao ler o Google Sheets.' }, 400);
@@ -454,7 +606,7 @@ export default {
       try {
         const stateResponse = await routeToRoom(new Request(`${url.origin}/api/state?room=${encodeURIComponent(room)}`), env, room);
         const statePayload = await stateResponse.json();
-        return json({ ok: true, version: '0.7.0', room, hasState: Boolean(statePayload?.state), activeCamera: statePayload?.state?.activeCamera || 1, itemCount: statePayload?.state?.scene?.items?.length || 0 });
+        return json({ ok: true, version: '0.8.0', room, hasState: Boolean(statePayload?.state), activeCamera: statePayload?.state?.activeCamera || 1, itemCount: statePayload?.state?.scene?.items?.length || 0 });
       } catch (error) {
         return json({ ok: false, error: error.message || 'Falha ao validar overlay.' }, 500);
       }
@@ -562,7 +714,13 @@ export class BroadcastRoom extends DurableObject {
         if (request.method === 'POST') body = await request.json().catch(() => ({}));
         const source = String(body.source || state.scene.dataSource.url || '').trim();
         const gid = String(body.gid || state.scene.dataSource.gid || '0').replace(/[^0-9]/g, '') || '0';
-        const result = await fetchGoogleSheet(source, gid);
+        const readConfig = normalizeSheetReadConfig({
+          range: body.range ?? state.scene.dataSource.range,
+          mappingMode: body.mappingMode ?? state.scene.dataSource.mappingMode,
+          firstRowHeader: body.firstRowHeader ?? state.scene.dataSource.firstRowHeader,
+          columns: body.columns ?? state.scene.dataSource.columns
+        });
+        const result = await fetchGoogleSheet(source, gid, readConfig);
         const previous = new Map(state.scene.items.map(item => [String(item.name).trim().toLowerCase(), item]));
         state.scene.items = result.items.map(item => {
           const old = previous.get(String(item.name).trim().toLowerCase());
@@ -574,17 +732,23 @@ export class BroadcastRoom extends DurableObject {
           type: 'google-sheets',
           url: source,
           gid: result.gid || gid,
+          range: result.readConfig?.range || readConfig.range,
+          mappingMode: result.readConfig?.mappingMode || readConfig.mappingMode,
+          firstRowHeader: result.readConfig?.firstRowHeader !== false,
+          columns: { ...state.scene.dataSource.columns, ...(result.readConfig?.columns || readConfig.columns) },
           autoRefresh: body.autoRefresh ?? state.scene.dataSource.autoRefresh,
           refreshSeconds: Math.max(3, Math.min(3600, Number(body.refreshSeconds || state.scene.dataSource.refreshSeconds || 5))),
           lastUpdated: new Date().toISOString(),
           lastRowCount: state.scene.items.length,
           lastError: '',
-          lastSourceUrl: result.sourceUrl || ''
+          lastSourceUrl: result.sourceUrl || '',
+          lastRange: result.selection?.range || '',
+          lastMapping: result.mapping || null
         };
         state.scene.playback.mode = 'preview';
         state.scene.playback.startedAt = 0;
         await this.saveState(state, 'sheets');
-        return json({ ok: true, state, items: state.scene.items, mapping: result.mapping, sourceUrl: result.sourceUrl, attempts: result.attempts });
+        return json({ ok: true, state, items: state.scene.items, mapping: result.mapping, selection: result.selection, sourceUrl: result.sourceUrl, attempts: result.attempts });
       } catch (error) {
         const state = await this.getState();
         state.scene.dataSource.lastError = error.message || 'Falha ao sincronizar planilha.';

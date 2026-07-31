@@ -1,6 +1,6 @@
 # Validação do arquivo SP05.glb
 
-Arquivo inspecionado durante a correção da v0.7.0.
+Arquivo inspecionado durante a correção da v0.8.0.
 
 ## Estrutura
 
@@ -27,13 +27,13 @@ alphaMode: BLEND
 doubleSided: true
 ```
 
-A v0.7.0 mantém esses materiais e desativa a escrita de profundidade nos materiais de mistura, evitando retângulos opacos e problemas comuns de sobreposição.
+A v0.8.0 mantém esses materiais e desativa a escrita de profundidade nos materiais de mistura, evitando retângulos opacos e problemas comuns de sobreposição.
 
 ## Animação
 
 A cena começa com vários objetos em escala zero. Por isso, a centralização não pode ser calculada apenas no frame inicial.
 
-A v0.7.0:
+A v0.8.0:
 
 1. carrega todas as 18 animações;
 2. avalia temporariamente o último frame;

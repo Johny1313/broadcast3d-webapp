@@ -1,5 +1,5 @@
 {
-  "version": "0.7.0",
-  "stateVersion": 7,
-  "build": "r2-large-glb-sp05-fix"
+  "version": "0.8.0",
+  "stateVersion": 8,
+  "build": "sheets-a1-range-manual-columns"
 }

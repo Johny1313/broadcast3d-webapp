@@ -62,7 +62,7 @@ Resposta esperada:
 ```json
 {
   "ok": true,
-  "version": "0.7.0",
+  "version": "0.8.0",
   "mediaBucket": true
 }
 ```

@@ -1,5 +1,5 @@
-import { BroadcastRenderer } from './renderer3d.js?v=0.7.0';
-import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programPreviewUrl, programUrl, setConnection, uploadMedia } from './cloud.js?v=0.7.0';
+import { BroadcastRenderer } from './renderer3d.js?v=0.8.0';
+import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programPreviewUrl, programUrl, setConnection, uploadMedia } from './cloud.js?v=0.8.0';
 
 const $ = id => document.getElementById(id);
 const DEG = Math.PI / 180;
@@ -31,7 +31,7 @@ function defaultLight(index = 1) {
 function normalizeState(input) {
   const next = structuredClone(input || {});
   const previousVersion = Number(next.version || 0);
-  next.version = 7;
+  next.version = 8;
   next.projectName ||= 'Projeto 3D - Eleições';
   next.activeCamera = Number(next.activeCamera || 1);
   next.selectedCamera = Number(next.selectedCamera || next.activeCamera || 1);
@@ -57,7 +57,10 @@ function normalizeState(input) {
   next.scene.generatedGraphVisible = next.scene.generatedGraphVisible ?? true;
   if (previousVersion > 0 && previousVersion < 6 && next.scene.model.url && next.scene.generatedGraphVisible === false) next.scene.generatedGraphVisible = true;
   next.scene.playback = { mode: 'preview', startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4, ...(next.scene.playback || {}) };
-  next.scene.dataSource = { type: 'google-sheets', url: '', gid: '0', autoRefresh: true, refreshSeconds: 5, lastUpdated: '', lastRowCount: 0, lastError: '', lastSourceUrl: '', ...(next.scene.dataSource || {}) };
+  next.scene.dataSource = { type: 'google-sheets', url: '', gid: '0', range: '', mappingMode: 'auto', firstRowHeader: true, columns: { name: 'A', value: 'B', color: 'C', image: 'D' }, autoRefresh: true, refreshSeconds: 5, lastUpdated: '', lastRowCount: 0, lastError: '', lastSourceUrl: '', lastRange: '', lastMapping: null, ...(next.scene.dataSource || {}) };
+  next.scene.dataSource.columns = { name: 'A', value: 'B', color: 'C', image: 'D', ...(next.scene.dataSource.columns || {}) };
+  next.scene.dataSource.mappingMode = next.scene.dataSource.mappingMode === 'manual' ? 'manual' : 'auto';
+  next.scene.dataSource.firstRowHeader = next.scene.dataSource.firstRowHeader !== false;
   next.scene.guideOpacity = Number(next.scene.guideOpacity ?? 0.72);
 
   const defaults = [
@@ -360,15 +363,30 @@ function renderSheetControls() {
   $('sheetUrl').value = source.url || '';
   $('sheetUrlQuick').value = source.url || '';
   $('sheetGid').value = source.gid || '0';
+  $('sheetRange').value = source.range || '';
+  $('sheetMappingMode').value = source.mappingMode === 'manual' ? 'manual' : 'auto';
+  $('sheetFirstRowHeader').checked = source.firstRowHeader !== false;
+  $('sheetNameColumn').value = source.columns?.name || 'A';
+  $('sheetValueColumn').value = source.columns?.value || 'B';
+  $('sheetColorColumn').value = source.columns?.color || 'C';
+  $('sheetImageColumn').value = source.columns?.image || 'D';
+  $('sheetManualMapping').hidden = source.mappingMode !== 'manual';
   $('sheetRefreshSeconds').value = Math.max(3, Number(source.refreshSeconds || 5));
   $('sheetAutoRefresh').checked = source.autoRefresh !== false;
   $('sheetLastUpdate').textContent = formatSheetDate(source.lastUpdated);
+  const readRange = source.range || 'Aba inteira';
+  const readMapping = source.mappingMode === 'manual'
+    ? `nome ${source.columns?.name || '—'} · valor ${source.columns?.value || '—'} · cor ${source.columns?.color || '—'} · imagem ${source.columns?.image || '—'}`
+    : 'automático por cabeçalho';
+  $('sheetReadSummary').textContent = `${readRange} · ${readMapping}`;
   $('sheetConnectionPill').textContent = connected ? 'CONECTADO' : 'DESCONECTADO';
   $('sheetConnectionPill').className = `pill ${connected ? 'ready' : ''}`;
   $('sheetStatusPill').textContent = connected ? 'CONECTADO' : 'GOOGLE SHEETS';
   $('sheetStatusPill').className = `pill ${connected ? 'ready' : ''}`;
+  const rangeSummary = source.range ? ` · intervalo ${source.range}` : '';
+  const mappingSummary = source.mappingMode === 'manual' ? ` · ${source.columns?.name || 'A'}/${source.columns?.value || 'B'}` : ' · colunas automáticas';
   const summary = connected
-    ? `${Number(source.lastRowCount || state.scene.items.length)} linhas · GID ${source.gid || '0'}`
+    ? `${Number(source.lastRowCount || state.scene.items.length)} linhas · GID ${source.gid || '0'}${rangeSummary}${mappingSummary}`
     : 'Nenhuma planilha conectada';
   $('sheetQuickStatus').textContent = summary;
   if (!$('sheetStatus').dataset.busy) $('sheetStatus').textContent = source.lastError
@@ -390,6 +408,15 @@ function syncSheetInputsToState() {
   const source = state.scene.dataSource;
   source.url = String($('sheetUrl').value || $('sheetUrlQuick').value || '').trim();
   source.gid = String($('sheetGid').value || '0').replace(/[^0-9]/g, '') || '0';
+  source.range = String($('sheetRange').value || '').trim().toUpperCase();
+  source.mappingMode = $('sheetMappingMode').value === 'manual' ? 'manual' : 'auto';
+  source.firstRowHeader = $('sheetFirstRowHeader').checked;
+  source.columns = {
+    name: String($('sheetNameColumn').value || 'A').trim().toUpperCase().replace(/[^A-Z]/g, ''),
+    value: String($('sheetValueColumn').value || 'B').trim().toUpperCase().replace(/[^A-Z]/g, ''),
+    color: String($('sheetColorColumn').value || '').trim().toUpperCase().replace(/[^A-Z]/g, ''),
+    image: String($('sheetImageColumn').value || '').trim().toUpperCase().replace(/[^A-Z]/g, '')
+  };
   source.refreshSeconds = Math.max(3, Math.min(3600, Number($('sheetRefreshSeconds').value || 5)));
   source.autoRefresh = $('sheetAutoRefresh').checked;
 }
@@ -422,6 +449,10 @@ async function refreshGoogleSheet({ persist = true, silent = false } = {}) {
       body: JSON.stringify({
         source: source.url,
         gid: source.gid || '0',
+        range: source.range || '',
+        mappingMode: source.mappingMode || 'auto',
+        firstRowHeader: source.firstRowHeader !== false,
+        columns: source.columns || { name: 'A', value: 'B', color: 'C', image: 'D' },
         autoRefresh: source.autoRefresh !== false,
         refreshSeconds: source.refreshSeconds || 5
       })
@@ -430,7 +461,7 @@ async function refreshGoogleSheet({ persist = true, silent = false } = {}) {
     state.scene.playback.mode = 'preview';
     renderer.setState(state);
     renderAll();
-    $('sheetStatus').textContent = `${state.scene.items.length} linhas carregadas. O gráfico foi criado; use PLAY para enviá-lo ao overlay.`;
+    $('sheetStatus').textContent = `${state.scene.items.length} linhas carregadas${state.scene.dataSource.range ? ` do intervalo ${state.scene.dataSource.range}` : ''}. O gráfico foi criado; use PLAY para enviá-lo ao overlay.`;
     if (!silent) showToast('Gráfico criado a partir do Google Sheets');
   } catch (error) {
     state.scene.dataSource.lastError = error.message;
@@ -829,7 +860,7 @@ function bindSheetControls() {
   $('openSheetControlsButton').addEventListener('click', () => openPanel('sheets'));
   $('connectSheetButton').addEventListener('click', () => refreshGoogleSheet({ persist: true }));
   $('refreshSheetButton').addEventListener('click', () => refreshGoogleSheet({ persist: true }));
-  ['sheetUrl', 'sheetGid', 'sheetRefreshSeconds', 'sheetAutoRefresh'].forEach(id => {
+  ['sheetUrl', 'sheetGid', 'sheetRange', 'sheetMappingMode', 'sheetFirstRowHeader', 'sheetNameColumn', 'sheetValueColumn', 'sheetColorColumn', 'sheetImageColumn', 'sheetRefreshSeconds', 'sheetAutoRefresh'].forEach(id => {
     $(id).addEventListener('change', () => {
       if (!state || suppressInputs) return;
       syncSheetInputsToState();
@@ -837,6 +868,9 @@ function bindSheetControls() {
       scheduleSheetRefresh();
       queueSave('Configuração do Google Sheets salva');
     });
+  });
+  $('sheetMappingMode').addEventListener('input', () => {
+    $('sheetManualMapping').hidden = $('sheetMappingMode').value !== 'manual';
   });
 }
 

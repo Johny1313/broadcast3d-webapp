@@ -1,3 +1,12 @@
+## 0.8.0
+
+- Campo de intervalo A1 para limitar linhas e colunas do Google Sheets.
+- Modo automático por cabeçalho e modo manual por letras de coluna.
+- Configuração independente das colunas de nome, valor, cor e imagem.
+- Opção para considerar ou não a primeira linha do intervalo como cabeçalho.
+- Persistência da seleção por sala e uso da mesma configuração no auto-refresh.
+- Mensagens de erro específicas para intervalo vazio ou coluna fora da seleção.
+
 # Changelog
 
 ## 0.7.0

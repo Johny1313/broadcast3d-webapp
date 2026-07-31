@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Broadcast3D Cloud v0.7.0</title>
-  <link rel="stylesheet" href="/styles.css?v=0.7.0">
+  <title>Broadcast3D Cloud v0.8.0</title>
+  <link rel="stylesheet" href="/styles.css?v=0.8.0">
   <script type="importmap">
   {
     "imports": {
@@ -19,7 +19,7 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark">3D</div>
-        <div><strong>Broadcast3D Cloud <small class="version-badge">v0.7.0</small></strong><span>PLAY único para GLB + gráfico do Google Sheets · overlay transparente para vMix</span></div>
+        <div><strong>Broadcast3D Cloud <small class="version-badge">v0.8.0</small></strong><span>PLAY único para GLB + gráfico do Google Sheets · overlay transparente para vMix</span></div>
       </div>
       <div class="top-actions cloud-top-actions">
         <span id="connectionBadge" class="status-badge">Conectando</span>
@@ -213,6 +213,27 @@
             <label class="field">GID da aba<input id="sheetGid" type="text" inputmode="numeric" value="0"></label>
             <label class="field">Atualizar a cada (s)<input id="sheetRefreshSeconds" type="number" min="3" max="3600" step="1"></label>
           </div>
+          <label class="field">Linhas e colunas — intervalo A1<input id="sheetRange" type="text" autocomplete="off" spellcheck="false" placeholder="Ex.: A2:F20, B:D ou 3:12"></label>
+          <p class="helper range-helper">Deixe vazio para ler a aba inteira. O intervalo limita exatamente as linhas e colunas usadas pelo gráfico.</p>
+          <div class="form-grid two">
+            <label class="field">Leitura das colunas
+              <select id="sheetMappingMode">
+                <option value="auto">Automática pelo cabeçalho</option>
+                <option value="manual">Manual por letra da coluna</option>
+              </select>
+            </label>
+            <label class="switch-row header-switch"><input id="sheetFirstRowHeader" type="checkbox"><span>A primeira linha do intervalo é cabeçalho</span></label>
+          </div>
+          <div id="sheetManualMapping" class="sheet-manual-mapping" hidden>
+            <div class="section-title compact-title"><span>Mapeamento manual</span><span class="pill">COLUNAS</span></div>
+            <div class="form-grid four sheet-column-grid">
+              <label class="field">Nome<input id="sheetNameColumn" type="text" maxlength="3" value="A" placeholder="A"></label>
+              <label class="field">Valor<input id="sheetValueColumn" type="text" maxlength="3" value="B" placeholder="B"></label>
+              <label class="field">Cor<input id="sheetColorColumn" type="text" maxlength="3" value="C" placeholder="C"></label>
+              <label class="field">Imagem<input id="sheetImageColumn" type="text" maxlength="3" value="D" placeholder="D"></label>
+            </div>
+            <p class="helper">Use letras absolutas da planilha. Exemplo: nome em B, valor em E, cor em F e imagem em H.</p>
+          </div>
           <label class="switch-row"><input id="sheetAutoRefresh" type="checkbox"><span>Atualização automática</span></label>
           <div class="button-row">
             <button id="connectSheetButton" class="button primary" type="button">Conectar e ler</button>
@@ -220,10 +241,11 @@
           </div>
           <div id="sheetStatus" class="sheet-status">Nenhuma planilha conectada.</div>
           <div class="sheet-meta"><span>Última leitura</span><b id="sheetLastUpdate">—</b></div>
+          <div class="sheet-meta"><span>Seleção ativa</span><b id="sheetReadSummary">Aba inteira · automático</b></div>
           <div class="divider"></div>
-          <div class="section-title"><span>Colunas reconhecidas</span><span class="pill">AUTOMÁTICO</span></div>
+          <div class="section-title"><span>Estrutura de leitura</span><span class="pill">A1 + MAPEAMENTO</span></div>
           <div class="sheet-columns"><code>nome</code><code>valor</code><code>cor</code><code>imagem</code></div>
-          <p class="helper">Obrigatórias: <b>nome</b> e <b>valor</b>. Opcionais: <b>cor</b> em hexadecimal e <b>imagem</b> com URL HTTPS.</p>
+          <p class="helper">No modo automático, o sistema procura esses cabeçalhos dentro do intervalo. No modo manual, usa exatamente as letras informadas.</p>
           <div id="sheetPreview" class="sheet-preview"></div>
         </section>
 
@@ -297,6 +319,6 @@
     </div>
   </dialog>
 
-  <script type="module" src="/js/operator.js?v=0.7.0"></script>
+  <script type="module" src="/js/operator.js?v=0.8.0"></script>
 </body>
 </html>

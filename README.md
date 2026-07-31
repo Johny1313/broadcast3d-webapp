@@ -1,4 +1,22 @@
-# Broadcast3D Cloud v0.7.0
+# Broadcast3D Cloud v0.8.0
+
+## Seleção de linhas e colunas do Google Sheets
+
+A leitura da planilha agora pode ser limitada por **intervalo A1** e por **mapeamento manual de colunas**.
+
+Exemplos de intervalo:
+
+- `A2:F20` — lê apenas as linhas 2 a 20 e as colunas A a F;
+- `B:D` — lê todas as linhas, somente entre B e D;
+- `3:12` — lê todas as colunas, somente entre as linhas 3 e 12;
+- vazio — lê a aba inteira.
+
+Há dois modos:
+
+1. **Automático pelo cabeçalho**: procura `nome`, `valor`, `cor` e `imagem` dentro do intervalo selecionado.
+2. **Manual por letra**: o operador informa as colunas absolutas, por exemplo nome em `B`, valor em `E`, cor em `F` e imagem em `H`.
+
+A opção **A primeira linha do intervalo é cabeçalho** define se a primeira linha selecionada será ignorada como dado. As configurações ficam salvas por sala e também são usadas nas atualizações automáticas.
 
 Webapp de overlay 3D transparente para vMix, com modelos GLB/OBJ, gráfico criado por Google Sheets, quatro câmeras virtuais, PLAY único e operação por Stream Deck.
 
@@ -8,7 +26,7 @@ O `SP05.glb` tem cerca de 32 MB, 16 malhas, aproximadamente 607 mil vértices, 1
 
 A versão anterior enviava o arquivo convertido em Base64 dentro de JSON e tentava guardar blocos grandes no Durable Object. Essa mecânica não era adequada para um GLB desse tamanho.
 
-A v0.7.0 muda o fluxo:
+A v0.8.0 muda o fluxo:
 
 ```text
 Navegador
@@ -104,6 +122,10 @@ https://SEU-WORKER.workers.dev/play?room=studio&token=SUA_CHAVE
 Preparar:
 https://SEU-WORKER.workers.dev/reset?room=studio&token=SUA_CHAVE
 ```
+
+## Teste específico do Sheets
+
+Consulte `TESTE-SHEETS-INTERVALO.md` para validar intervalo A1 e mapeamento manual.
 
 ## Desenvolvimento
 
