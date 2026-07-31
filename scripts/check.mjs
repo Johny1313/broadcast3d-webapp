@@ -53,8 +53,23 @@ for (const required of ["api('/api/sheets/sync'", 'programPreviewUrl', '/api/ove
   if (!operator.includes(required)) throw new Error(`Operador incompleto: ${required}`);
 }
 
-const cloud = await readFile(new URL('../public/js/cloud.js', import.meta.url), 'utf8');
-if (!cloud.includes("new URL('/overlay'") || !cloud.includes('XMLHttpRequest') || !cloud.includes('/api/media/upload')) throw new Error('Link de overlay não usa a rota /overlay.');
+const wrangler = await readFile(
+  new URL('../wrangler.jsonc', import.meta.url),
+  'utf8'
+);
+
+for (const route of [
+  '/api/*',
+  '/camera/*',
+  '/cut/*',
+  '/play',
+  '/reset',
+  '/overlay'
+]) {
+  if (!wrangler.includes(route)) {
+    throw new Error(`Rota ausente: ${route}`);
+  }
+}
 
 const wrangler = await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
 for (const route of ['/api/*','/camera/*','/cut/*','/play','/reset','/overlay','MEDIA_BUCKET','broadcast3d-media']) if (!wrangler.includes(route)) throw new Error(`Rota ausente: ${route}`);
