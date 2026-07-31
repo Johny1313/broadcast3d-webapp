@@ -642,16 +642,41 @@ export class BroadcastRenderer {
     this.mixer.setTime(0);
     this.activeActions = this.modelAnimations.map(clip => {
       const action = this.mixer.clipAction(clip);
+      const duration = Math.max(0, Number(clip.duration || 0));
       action.enabled = true;
       action.reset();
       action.setEffectiveWeight(1);
       action.setEffectiveTimeScale(1);
       action.setLoop(THREE.LoopOnce, 1);
       action.clampWhenFinished = true;
-      action.paused = false;
+      action.paused = true;
       action.play();
-      return action;
+      return { action, clip, duration };
     });
+    this.applyModelAnimationAtTime(0);
+  }
+
+  applyModelAnimationAtTime(elapsedSeconds) {
+    if (!this.mixer || !this.activeActions.length) return;
+    const speed = Math.max(0.01, Number(this.state.scene.model.animation?.speed || 1));
+    const masterTime = Math.max(0, Number(elapsedSeconds || 0) * speed);
+
+    for (const entry of this.activeActions) {
+      const action = entry.action;
+      const duration = Math.max(0, Number(entry.duration || entry.clip?.duration || 0));
+      const localTime = duration > 0 ? Math.min(masterTime, duration) : 0;
+      const finished = duration <= 0 || masterTime >= duration;
+
+      action.enabled = true;
+      action.setEffectiveWeight(1);
+      action.setEffectiveTimeScale(1);
+      action.time = localTime;
+      action.paused = finished;
+    }
+
+    // Avalia todas as ações no tempo definido. Ações concluídas permanecem
+    // habilitadas e pausadas no último frame, sem voltar à pose inicial.
+    this.mixer.update(0);
   }
 
   playbackElapsed() {
@@ -670,10 +695,7 @@ export class BroadcastRenderer {
     this.currentResetToken = resetToken;
     this.prepareModelActions();
     const elapsed = this.playbackElapsed();
-    if (this.mixer) {
-      const speed = Math.max(0.01, Number(this.state.scene.model.animation?.speed || 1));
-      this.mixer.setTime(Math.min(elapsed * speed, this.modelDuration || 0));
-    }
+    this.applyModelAnimationAtTime(elapsed);
     this.applyGraphAnimation(elapsed);
   }
 
@@ -730,10 +752,7 @@ export class BroadcastRenderer {
   render(delta) {
     this.updateCamera();
     const elapsed = this.playbackElapsed();
-    if (this.mixer) {
-      const speed = Math.max(0.01, Number(this.state.scene.model.animation?.speed || 1));
-      this.mixer.setTime(Math.min(elapsed * speed, this.modelDuration || 0));
-    }
+    this.applyModelAnimationAtTime(elapsed);
     this.applyGraphAnimation(elapsed);
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.clear(true, true, true);

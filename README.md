@@ -1,4 +1,14 @@
-# Broadcast3D Cloud v0.5.0
+# Broadcast3D Cloud v0.5.1
+
+## Comportamento das animações GLB
+
+- O botão **PLAY** inicia todos os clipes do GLB no tempo zero.
+- Não há loop automático.
+- Cada clipe respeita sua duração e seus keyframes.
+- Ao terminar, cada ação é pausada exatamente no último frame e permanece habilitada.
+- Os objetos continuam visíveis na cena até o operador usar **Preparar**, ocultar o modelo ou carregar outro projeto.
+- O botão **Preparar** retorna o GLB e o gráfico do Google Sheets ao estado inicial.
+
 
 Webapp de overlay 3D transparente para vMix, publicado por GitHub e Cloudflare Workers.
 

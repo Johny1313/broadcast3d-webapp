@@ -1,5 +1,5 @@
-import { BroadcastRenderer } from './renderer3d.js?v=0.5.0';
-import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programUrl, setConnection } from './cloud.js?v=0.5.0';
+import { BroadcastRenderer } from './renderer3d.js?v=0.5.1';
+import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programUrl, setConnection } from './cloud.js?v=0.5.1';
 
 const $ = id => document.getElementById(id);
 const DEG = Math.PI / 180;

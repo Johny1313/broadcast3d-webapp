@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.1
+
+- Corrigido o congelamento das animações GLB no último frame.
+- Cada clipe mantém seu próprio tempo final, mesmo quando as durações são diferentes.
+- Ações concluídas permanecem habilitadas e pausadas, evitando retorno à pose inicial.
+- O PLAY continua sem loop e o botão Preparar retorna todos os clipes ao frame zero.
+- Mantida a sincronização com o gráfico gerado pelo Google Sheets.
+
 ## 0.5.0
 
 - PLAY único para GLB e gráfico do Google Sheets.

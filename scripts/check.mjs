@@ -11,7 +11,7 @@ for (const file of files) await access(new URL(`../${file}`, import.meta.url));
 const worker = await readFile(new URL('../src/index.js', import.meta.url), 'utf8');
 for (const required of [
   'BroadcastRoom', '/api/state', '/api/ws', '/api/upload', '/api/sheets',
-  '/api/play', '/api/play/reset', "version: '0.5.0'", 'state.version = 5',
+  '/api/play', '/api/play/reset', "version: '0.5.1'", 'state.version = 5',
   'scene.playback', 'state.scene.playback.startedAt = now'
 ]) if (!worker.includes(required)) throw new Error(`Implementação ausente no Worker: ${required}`);
 
@@ -19,7 +19,7 @@ const renderer = await readFile(new URL('../public/js/renderer3d.js', import.met
 for (const required of [
   'GLTFLoader', 'AnimationMixer', 'LoopOnce', 'clampWhenFinished = true',
   'applyPlaybackState', 'applyGraphAnimation', 'graphStart', 'graphDuration',
-  'this.mixer.setTime', 'modelDuration'
+  'applyModelAnimationAtTime', 'action.time = localTime', 'action.paused = finished', 'this.mixer.update(0)', 'modelDuration'
 ]) if (!renderer.includes(required)) throw new Error(`Playback 3D ausente: ${required}`);
 for (const removed of ['LoopRepeat', 'animation.loop === false', 'modelAnimationLoop']) {
   if (renderer.includes(removed)) throw new Error(`Loop antigo ainda presente no renderer: ${removed}`);
@@ -36,7 +36,7 @@ for (const removed of ['modelAnimationPlay', 'modelAnimationLoop', 'restartAnima
 
 const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
 for (const required of [
-  'v0.5.0', '▶ PLAY', 'Preparar', 'graphAnimationStart', 'graphAnimationDuration',
+  'v0.5.1', '▶ PLAY', 'Preparar', 'graphAnimationStart', 'graphAnimationDuration',
   'PLAY geral — GLB + gráfico', 'último frame'
 ]) if (!html.includes(required)) throw new Error(`Elemento de interface ausente: ${required}`);
 
@@ -45,4 +45,4 @@ for (const route of ['/api/*', '/camera/*', '/cut/*', '/play', '/reset']) {
   if (!wrangler.includes(route)) throw new Error(`Rota não encaminhada ao Worker: ${route}`);
 }
 
-console.log('Broadcast3D v0.5.0 validado: PLAY único, GLB sem loop com último frame fixo e atraso configurável do gráfico Sheets.');
+console.log('Broadcast3D v0.5.1 validado: GLB congelado individualmente no último frame, sem loop, com gráfico Sheets sincronizado.');

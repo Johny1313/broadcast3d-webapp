@@ -247,7 +247,7 @@ export default {
       return json({
         ok: true,
         service: 'broadcast3d-cloudflare',
-        version: '0.5.0',
+        version: '0.5.1',
         realtime: 'durable-object-websocket',
         storage: 'durable-object-sqlite',
         authRequired: Boolean(String(env.CONTROL_TOKEN || '').trim())

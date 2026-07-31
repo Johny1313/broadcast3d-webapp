@@ -1,6 +1,6 @@
 {
   "name": "broadcast3d-cloudflare-webapp",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Webapp de overlay 3D transparente para vMix com playback único de GLB e gráfico Google Sheets, quatro câmeras virtuais e Cloudflare Workers.",
   "type": "module",
