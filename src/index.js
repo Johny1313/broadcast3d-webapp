@@ -17,7 +17,7 @@ function json(data, status = 200, extraHeaders = {}) {
 
 function defaultState() {
   return {
-    version: 3,
+    version: 4,
     projectName: 'Projeto 3D - Eleições',
     activeCamera: 1,
     selectedCamera: 1,
@@ -55,7 +55,17 @@ function defaultState() {
         position: { x: 0, y: 0, z: 0 },
         rotation: { x: 0, y: 0, z: 0 },
         scale: 1,
-        animation: { clipName: '', play: true, loop: true, speed: 1 }
+        animation: { play: true, loop: true, speed: 1, restartToken: 0 }
+      },
+      generatedGraphVisible: true,
+      dataSource: {
+        type: 'google-sheets',
+        url: '',
+        gid: '0',
+        autoRefresh: true,
+        refreshSeconds: 5,
+        lastUpdated: '',
+        lastRowCount: 0
       },
       guideOpacity: 0.72
     },
@@ -71,7 +81,7 @@ function defaultState() {
 function normalizeState(input) {
   const defaults = defaultState();
   const state = structuredClone(input && typeof input === 'object' ? input : defaults);
-  state.version = 3;
+  state.version = 4;
   state.projectName ||= defaults.projectName;
   state.activeCamera = Number(state.activeCamera || 1);
   state.selectedCamera = Number(state.selectedCamera || state.activeCamera || 1);
@@ -87,6 +97,8 @@ function normalizeState(input) {
   state.scene.model.position = { ...defaults.scene.model.position, ...(state.scene.model.position || {}) };
   state.scene.model.rotation = { ...defaults.scene.model.rotation, ...(state.scene.model.rotation || {}) };
   state.scene.model.animation = { ...defaults.scene.model.animation, ...(state.scene.model.animation || {}) };
+  state.scene.generatedGraphVisible = state.scene.generatedGraphVisible ?? !state.scene.model.url;
+  state.scene.dataSource = { ...defaults.scene.dataSource, ...(state.scene.dataSource || {}) };
   state.scene.guideOpacity = Number(state.scene.guideOpacity ?? defaults.scene.guideOpacity);
   const cameras = Array.isArray(state.cameras) ? state.cameras : [];
   state.cameras = defaults.cameras.map(base => {
@@ -94,6 +106,110 @@ function normalizeState(input) {
     return { ...base, ...current, target: Array.isArray(current.target) ? current.target.map(Number) : [...base.target] };
   });
   return state;
+}
+
+
+function parseCsvRows(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let quoted = false;
+  const source = String(text || '').replace(/^\uFEFF/, '');
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (quoted) {
+      if (char === '"' && source[index + 1] === '"') {
+        field += '"';
+        index += 1;
+      } else if (char === '"') quoted = false;
+      else field += char;
+      continue;
+    }
+    if (char === '"') quoted = true;
+    else if (char === ',') { row.push(field); field = ''; }
+    else if (char === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+    else if (char !== '\r') field += char;
+  }
+  row.push(field);
+  if (row.some(value => String(value).trim() !== '')) rows.push(row);
+  return rows;
+}
+
+function normalizeHeader(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+}
+
+function rowsToItems(rows) {
+  if (!Array.isArray(rows) || rows.length < 2) throw new Error('A planilha precisa ter cabeçalho e pelo menos uma linha.');
+  const headers = rows[0].map(normalizeHeader);
+  const find = names => headers.findIndex(header => names.includes(header));
+  const nameIndex = find(['nome', 'name', 'item', 'categoria', 'candidato']);
+  const valueIndex = find(['valor', 'value', 'total', 'percentual', 'porcentagem', 'resultado']);
+  const colorIndex = find(['cor', 'color', 'hex']);
+  const imageIndex = find(['imagem', 'image', 'imagem_url', 'image_url', 'foto', 'icone', 'icon']);
+  if (nameIndex < 0 || valueIndex < 0) throw new Error('Use ao menos as colunas nome e valor no Google Sheets.');
+  const palette = ['#3567d7', '#10a9a6', '#7650a8', '#e9781b', '#d54b63', '#3b9d5d'];
+  const items = rows.slice(1).filter(row => row.some(cell => String(cell || '').trim() !== '')).map((row, index) => {
+    const name = String(row[nameIndex] || `Item ${index + 1}`).trim();
+    let rawValue = String(row[valueIndex] ?? '0').trim().replace(/\s/g, '').replace('%', '');
+    if (rawValue.includes(',') && rawValue.includes('.')) {
+      if (rawValue.lastIndexOf(',') > rawValue.lastIndexOf('.')) rawValue = rawValue.replace(/\./g, '').replace(',', '.');
+      else rawValue = rawValue.replace(/,/g, '');
+    } else if (rawValue.includes(',')) rawValue = rawValue.replace(',', '.');
+    const value = Number(rawValue) || 0;
+    const rawColor = String(row[colorIndex] || '').trim();
+    const color = /^#[0-9a-f]{6}$/i.test(rawColor) ? rawColor : palette[index % palette.length];
+    const imageUrl = imageIndex >= 0 ? String(row[imageIndex] || '').trim() : '';
+    return {
+      id: `${normalizeHeader(name) || 'item'}-${index}`,
+      name,
+      value,
+      color,
+      imageUrl: /^https:\/\//i.test(imageUrl) ? imageUrl : ''
+    };
+  }).slice(0, 32);
+  return { headers, items };
+}
+
+function googleSheetCsvUrl(source, requestedGid = '0') {
+  const raw = String(source || '').trim();
+  if (!raw) throw new Error('Cole o link público do Google Sheets.');
+  let url;
+  try { url = new URL(raw); } catch { throw new Error('Link do Google Sheets inválido.'); }
+  const allowed = ['docs.google.com', 'docs.googleusercontent.com'];
+  if (!allowed.some(host => url.hostname === host || url.hostname.endsWith(`.${host}`))) {
+    throw new Error('Use apenas um link do Google Sheets.');
+  }
+  const hashGid = (url.hash.match(/gid=(\d+)/) || [])[1] || '';
+  const preferredGid = String(requestedGid || '').trim();
+  const gid = String((preferredGid && preferredGid !== '0' ? preferredGid : '') || url.searchParams.get('gid') || hashGid || '0').replace(/[^0-9]/g, '') || '0';
+  const published = url.pathname.match(/^\/spreadsheets\/d\/e\/([a-zA-Z0-9-_]+)\/pub/);
+  if (published) {
+    const target = new URL(`https://docs.google.com/spreadsheets/d/e/${published[1]}/pub`);
+    target.searchParams.set('output', 'csv');
+    target.searchParams.set('gid', gid);
+    return target;
+  }
+  const standard = url.pathname.match(/^\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (standard) {
+    const target = new URL(`https://docs.google.com/spreadsheets/d/${standard[1]}/gviz/tq`);
+    target.searchParams.set('tqx', 'out:csv');
+    target.searchParams.set('gid', gid);
+    return target;
+  }
+  throw new Error('Não foi possível identificar o ID da planilha.');
+}
+
+async function fetchGoogleSheet(source, gid) {
+  const target = googleSheetCsvUrl(source, gid);
+  const response = await fetch(target, { redirect: 'follow', headers: { accept: 'text/csv,text/plain;q=0.9,*/*;q=0.1' } });
+  if (!response.ok) throw new Error(`Google Sheets respondeu com erro ${response.status}.`);
+  const text = await response.text();
+  if (/<!doctype html|<html/i.test(text) || /sign in|request access/i.test(text)) {
+    throw new Error('A planilha não está pública. Compartilhe como “qualquer pessoa com o link pode ver”.');
+  }
+  const parsed = rowsToItems(parseCsvRows(text));
+  return { ...parsed, sourceUrl: target.toString() };
 }
 
 function sanitizeRoom(value) {
@@ -127,10 +243,50 @@ export default {
       return json({
         ok: true,
         service: 'broadcast3d-cloudflare',
+        version: '0.4.0',
         realtime: 'durable-object-websocket',
         storage: 'durable-object-sqlite',
         authRequired: Boolean(String(env.CONTROL_TOKEN || '').trim())
       });
+    }
+
+
+    if (url.pathname === '/api/sheets' && request.method === 'GET') {
+      try {
+        const source = url.searchParams.get('source') || '';
+        const gid = url.searchParams.get('gid') || '0';
+        const result = await fetchGoogleSheet(source, gid);
+        return json({ ok: true, ...result, fetchedAt: new Date().toISOString() });
+      } catch (error) {
+        return json({ ok: false, error: error.message || 'Falha ao ler o Google Sheets.' }, 400);
+      }
+    }
+
+    const cameraRoute = url.pathname.match(/^\/camera\/(1|2|3|4)\/?$/);
+    if (cameraRoute) {
+      const room = sanitizeRoom(url.searchParams.get('room') || 'studio') || 'studio';
+      const target = new URL('/program.html', url.origin);
+      target.searchParams.set('room', room);
+      target.searchParams.set('camera', cameraRoute[1]);
+      return Response.redirect(target.toString(), 302);
+    }
+
+    if (url.pathname === '/overlay' || url.pathname === '/program') {
+      const room = sanitizeRoom(url.searchParams.get('room') || 'studio') || 'studio';
+      const target = new URL('/program.html', url.origin);
+      target.searchParams.set('room', room);
+      return Response.redirect(target.toString(), 302);
+    }
+
+    const friendlyCutRoute = url.pathname.match(/^\/cut\/(1|2|3|4)\/?$/);
+    if (friendlyCutRoute) {
+      const room = sanitizeRoom(url.searchParams.get('room') || 'studio');
+      if (!room) return json({ ok: false, error: 'Sala inválida.' }, 400);
+      if (!canWrite(request, env)) return json({ ok: false, error: 'Chave de controle inválida.' }, 401);
+      const rewrittenUrl = new URL(`/api/cut/${friendlyCutRoute[1]}`, url.origin);
+      rewrittenUrl.searchParams.set('room', room);
+      const rewritten = new Request(rewrittenUrl.toString(), { method: 'GET', headers: request.headers });
+      return routeToRoom(rewritten, env, room);
     }
 
     if (url.pathname.startsWith('/api/')) {

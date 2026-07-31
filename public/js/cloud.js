@@ -47,6 +47,21 @@ export function fixedProgramUrl(cameraId, room = getRoom()) {
   return url.toString();
 }
 
+export function cameraUrl(cameraId, room = getRoom()) {
+  const id = Math.max(1, Math.min(4, Number(cameraId) || 1));
+  const url = new URL(`/camera/${id}`, location.origin);
+  url.searchParams.set('room', sanitizeRoom(room));
+  return url.toString();
+}
+
+export function cutUrl(cameraId, room = getRoom(), token = getToken()) {
+  const id = Math.max(1, Math.min(4, Number(cameraId) || 1));
+  const url = new URL(`/cut/${id}`, location.origin);
+  url.searchParams.set('room', sanitizeRoom(room));
+  if (token) url.searchParams.set('token', token);
+  return url.toString();
+}
+
 export function controlUrl(path, room = getRoom(), token = getToken()) {
   const url = new URL(path, location.origin);
   url.searchParams.set('room', sanitizeRoom(room));

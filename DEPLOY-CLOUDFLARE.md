@@ -1,79 +1,74 @@
-# Deploy com GitHub e Cloudflare
+# Deploy — Cloudflare Workers + GitHub
 
-## 1. Criar o repositório GitHub
+## Requisitos
 
-Extraia o ZIP, abra um terminal na pasta e execute:
+- Conta Cloudflare.
+- Repositório GitHub.
+- Node.js 20 ou superior para teste local.
 
-```bash
-git init
-git add .
-git commit -m "Versão inicial do Broadcast3D Cloud"
-git branch -M main
-git remote add origin https://github.com/SEU-USUARIO/broadcast3d-webapp.git
-git push -u origin main
-```
-
-Também é possível criar o repositório pela interface do GitHub e enviar os arquivos pelo GitHub Desktop.
-
-## 2. Importar o repositório no Cloudflare
-
-No painel Cloudflare:
-
-1. Abra **Workers & Pages**.
-2. Selecione **Create application**.
-3. Escolha **Import a repository**.
-4. Conecte o GitHub e selecione o repositório.
-5. Use o nome de Worker `broadcast3d-webapp`, igual ao campo `name` de `wrangler.jsonc`.
-6. Build command: `npm run check`.
-7. Deploy command: `npx wrangler deploy`.
-8. Salve e faça o primeiro deploy.
-
-O Worker publica os arquivos estáticos, a API e o Durable Object na mesma implantação.
-
-## 3. Criar a chave de controle
-
-No Worker publicado:
-
-1. Abra **Settings**.
-2. Entre em **Variables and Secrets**.
-3. Crie um secret chamado `CONTROL_TOKEN`.
-4. Use uma chave longa e aleatória.
-5. Faça um novo deploy quando solicitado.
-
-Sem esse secret, qualquer pessoa que conheça a sala pode alterar o projeto.
-
-## 4. Abrir o sistema
-
-Substitua o domínio pelo endereço retornado no deploy:
-
-```text
-Painel:
-https://broadcast3d-webapp.SEUSUBDOMINIO.workers.dev/?room=studio
-
-Overlay:
-https://broadcast3d-webapp.SEUSUBDOMINIO.workers.dev/program.html?room=studio
-```
-
-Digite a chave apenas no painel. Ela fica armazenada localmente no navegador do operador e não é colocada no link do overlay.
-
-## 5. Atualizações automáticas
-
-Depois que a integração Git estiver ativa, cada push na branch de produção inicia uma nova compilação e implantação. Pull requests podem receber versões de preview conforme a configuração do Workers Builds.
-
-## Deploy manual alternativo
+## Publicação pelo terminal
 
 ```bash
 npm install
 npx wrangler login
+npm run check
 npm run deploy
 ```
 
-## Domínio personalizado
+O projeto publica:
 
-Após validar o `workers.dev`, configure um Custom Domain nas rotas do Worker, por exemplo:
+- arquivos estáticos da pasta `public`;
+- Worker da pasta `src`;
+- Durable Object `BroadcastRoom`;
+- WebSocket da sala;
+- armazenamento dos projetos e uploads;
+- proxy de leitura do Google Sheets em `/api/sheets`.
+
+## Publicação automática pelo GitHub
+
+Conecte o repositório no painel do Cloudflare Workers Builds.
+
+Comandos:
 
 ```text
-graficos.seudominio.com
+Build command: npm run check
+Deploy command: npm run deploy
 ```
 
-Mantenha o painel e o overlay no mesmo domínio para evitar problemas com carregamento de imagens e WebSocket.
+Cadastre o secret opcional:
+
+```text
+CONTROL_TOKEN
+```
+
+Quando o secret estiver ativo, os links de corte incluem `token=` automaticamente no painel.
+
+## URLs após o deploy
+
+Painel:
+
+```text
+https://SEU-WORKER.workers.dev/?room=studio
+```
+
+Overlay:
+
+```text
+https://SEU-WORKER.workers.dev/program.html?room=studio
+```
+
+Câmera fixa:
+
+```text
+https://SEU-WORKER.workers.dev/camera/1?room=studio
+```
+
+Corte Stream Deck:
+
+```text
+https://SEU-WORKER.workers.dev/cut/1?room=studio
+```
+
+## Google Sheets
+
+A planilha precisa estar visível para qualquer pessoa com o link. A leitura é feita pelo Worker e não requer chave de API nesta versão.

@@ -1,14 +1,17 @@
-import { BroadcastRenderer } from './renderer3d.js';
-import { api, connectSocket, getRoom } from './cloud.js';
+import { BroadcastRenderer } from './renderer3d.js?v=0.4.0';
+import { api, connectSocket, getRoom } from './cloud.js?v=0.4.0';
 
 const canvas = document.getElementById('programCanvas');
 const renderer = new BroadcastRenderer(canvas, { interactive: false });
 const requestedCamera = Number(new URLSearchParams(location.search).get('camera'));
 const fixedCamera = [1, 2, 3, 4].includes(requestedCamera) ? requestedCamera : null;
 let state = null;
+let sheetTimer = null;
+let sheetBusy = false;
 
 function normalizeState(input) {
   const next = structuredClone(input || {});
+  next.version = 4;
   next.activeCamera = Number(next.activeCamera || 1);
   next.outputVisible = next.outputVisible !== false;
   next.scene ||= {};
@@ -21,12 +24,14 @@ function normalizeState(input) {
   next.scene.model = {
     url: '', name: '', format: '', visible: true,
     position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: 1,
-    animation: { clipName: '', play: true, loop: true, speed: 1 },
+    animation: { play: true, loop: true, speed: 1, restartToken: 0 },
     ...(next.scene.model || {})
   };
   next.scene.model.position = { x: 0, y: 0, z: 0, ...(next.scene.model.position || {}) };
   next.scene.model.rotation = { x: 0, y: 0, z: 0, ...(next.scene.model.rotation || {}) };
-  next.scene.model.animation = { clipName: '', play: true, loop: true, speed: 1, ...(next.scene.model.animation || {}) };
+  next.scene.model.animation = { play: true, loop: true, speed: 1, restartToken: 0, ...(next.scene.model.animation || {}) };
+  next.scene.generatedGraphVisible = next.scene.generatedGraphVisible ?? !next.scene.model.url;
+  next.scene.dataSource = { type: 'google-sheets', url: '', gid: '0', autoRefresh: true, refreshSeconds: 5, ...(next.scene.dataSource || {}) };
   next.cameras = Array.isArray(next.cameras) ? next.cameras : [];
   return next;
 }
@@ -40,6 +45,37 @@ function apply(nextState) {
   state = normalizeState(nextState);
   renderer.setState(state);
   renderer.setCamera(activeCamera());
+  scheduleSheetRefresh();
+}
+
+async function refreshSheet() {
+  const source = state?.scene?.dataSource;
+  if (sheetBusy || !source?.url) return;
+  sheetBusy = true;
+  try {
+    const params = new URLSearchParams({ source: source.url, gid: source.gid || '0' });
+    const result = await api(`/api/sheets?${params.toString()}`);
+    const previous = new Map(state.scene.items.map(item => [String(item.name).trim().toLowerCase(), item]));
+    state.scene.items = (result.items || []).map(item => {
+      const old = previous.get(String(item.name).trim().toLowerCase());
+      return { ...item, imageUrl: item.imageUrl || old?.imageUrl || '' };
+    });
+    renderer.setState(state);
+  } catch (error) {
+    console.warn('Google Sheets:', error.message);
+  } finally {
+    sheetBusy = false;
+  }
+}
+
+function scheduleSheetRefresh() {
+  clearInterval(sheetTimer);
+  sheetTimer = null;
+  const source = state?.scene?.dataSource;
+  if (!source?.url || source.autoRefresh === false) return;
+  const seconds = Math.max(3, Math.min(3600, Number(source.refreshSeconds || 5)));
+  refreshSheet();
+  sheetTimer = setInterval(refreshSheet, seconds * 1000);
 }
 
 async function init() {

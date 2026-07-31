@@ -194,12 +194,14 @@ function normalizedState(input) {
     position: { x: 0, y: 0, z: 0 },
     rotation: { x: 0, y: 0, z: 0 },
     scale: 1,
-    animation: { clipName: '', play: true, loop: true, speed: 1 },
+    animation: { play: true, loop: true, speed: 1, restartToken: 0 },
     ...(state.scene.model || {})
   };
   state.scene.model.position = { x: 0, y: 0, z: 0, ...(state.scene.model.position || {}) };
   state.scene.model.rotation = { x: 0, y: 0, z: 0, ...(state.scene.model.rotation || {}) };
-  state.scene.model.animation = { clipName: '', play: true, loop: true, speed: 1, ...(state.scene.model.animation || {}) };
+  state.scene.model.animation = { play: true, loop: true, speed: 1, restartToken: 0, ...(state.scene.model.animation || {}) };
+  state.scene.generatedGraphVisible = state.scene.generatedGraphVisible ?? !state.scene.model.url;
+  state.scene.dataSource = { type: 'google-sheets', url: '', gid: '0', autoRefresh: true, refreshSeconds: 5, lastUpdated: '', lastRowCount: 0, ...(state.scene.dataSource || {}) };
   return state;
 }
 
@@ -213,10 +215,10 @@ export class BroadcastRenderer {
     this.coreToken = 0;
     this.modelToken = 0;
     this.currentModelUrl = '';
-    this.currentClipName = '';
     this.modelAnimations = [];
     this.mixer = null;
-    this.activeAction = null;
+    this.activeActions = [];
+    this.currentRestartToken = null;
     this.clock = new THREE.Clock();
 
     this.renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, premultipliedAlpha: false, powerPreference: 'high-performance' });
@@ -320,7 +322,7 @@ export class BroadcastRenderer {
       detail: {
         name: this.state.scene.model.name || '',
         format: this.state.scene.model.format || '',
-        animations: this.modelAnimations.map(clip => clip.name || `Animação ${this.modelAnimations.indexOf(clip) + 1}`)
+        animations: this.modelAnimations.map((clip, index) => ({ name: clip.name || `Animação ${index + 1}`, duration: Number(clip.duration || 0) }))
       }
     }));
   }
@@ -341,7 +343,8 @@ export class BroadcastRenderer {
       anchor: next.scene.anchor,
       base: next.scene.base,
       bars: next.scene.bars,
-      items: next.scene.items
+      items: next.scene.items,
+      generatedGraphVisible: next.scene.generatedGraphVisible
     });
     const lightSignature = JSON.stringify({ lighting: next.scene.lighting, lights: next.scene.lights });
     const modelUrlChanged = next.scene.model.url !== this.currentModelUrl;
@@ -353,6 +356,7 @@ export class BroadcastRenderer {
     this.lightSignature = lightSignature;
     this.applyAnchor();
     this.applyGlobalLighting();
+    this.coreGroup.visible = next.scene.generatedGraphVisible !== false;
     if (coreChanged) this.rebuildCore();
     if (lightsChanged) this.rebuildLights();
     if (modelUrlChanged) this.loadModel();
@@ -532,11 +536,11 @@ export class BroadcastRenderer {
   }
 
   clearModel() {
-    if (this.activeAction) this.activeAction.stop();
-    this.activeAction = null;
+    if (this.mixer) this.mixer.stopAllAction();
+    this.activeActions = [];
+    this.currentRestartToken = null;
     this.mixer = null;
     this.modelAnimations = [];
-    this.currentClipName = '';
     disposeGroup(this.modelPivot);
     this.dispatchModelInfo();
   }
@@ -603,9 +607,10 @@ export class BroadcastRenderer {
     this.modelPivot.visible = Boolean(model.visible && model.url);
     const position = model.position;
     const rotation = model.rotation;
+    const supportHeight = this.state.scene.generatedGraphVisible === false ? 0 : Number(this.state.scene.base.thickness || 0);
     this.modelPivot.position.set(
       Number(position.x || 0),
-      Number(this.state.scene.base.thickness || 0) + Number(position.y || 0),
+      supportHeight + Number(position.y || 0),
       Number(position.z || 0)
     );
     this.modelPivot.rotation.set(Number(rotation.x || 0) * DEG, Number(rotation.y || 0) * DEG, Number(rotation.z || 0) * DEG);
@@ -614,19 +619,49 @@ export class BroadcastRenderer {
 
     if (!this.mixer || !this.modelAnimations.length) return;
     const animation = model.animation;
-    const wantedName = animation.clipName && this.modelAnimations.some(clip => clip.name === animation.clipName)
-      ? animation.clipName
-      : this.modelAnimations[0].name;
-    if (forceAnimation || wantedName !== this.currentClipName || !this.activeAction) {
-      this.activeAction?.stop();
-      const clip = this.modelAnimations.find(entry => entry.name === wantedName) || this.modelAnimations[0];
-      this.activeAction = this.mixer.clipAction(clip);
-      this.currentClipName = clip.name;
-      this.activeAction.reset().play();
+    const restartToken = Number(animation.restartToken || 0);
+    if (forceAnimation || this.activeActions.length !== this.modelAnimations.length || restartToken !== this.currentRestartToken) {
+      this.mixer.stopAllAction();
+      this.mixer.setTime(0);
+      this.currentRestartToken = restartToken;
+      this.activeActions = this.modelAnimations.map(clip => {
+        const action = this.mixer.clipAction(clip);
+        action.enabled = true;
+        action.reset();
+        action.setEffectiveWeight(1);
+        action.setEffectiveTimeScale(1);
+        action.setLoop(animation.loop === false ? THREE.LoopOnce : THREE.LoopRepeat, animation.loop === false ? 1 : Infinity);
+        action.clampWhenFinished = animation.loop === false;
+        action.paused = animation.play === false;
+        action.play();
+        return action;
+      });
     }
-    this.activeAction.paused = animation.play === false;
-    this.activeAction.setLoop(animation.loop === false ? THREE.LoopOnce : THREE.LoopRepeat, animation.loop === false ? 1 : Infinity);
-    this.activeAction.clampWhenFinished = animation.loop === false;
+    for (const action of this.activeActions) {
+      action.paused = animation.play === false;
+      action.setLoop(animation.loop === false ? THREE.LoopOnce : THREE.LoopRepeat, animation.loop === false ? 1 : Infinity);
+      action.clampWhenFinished = animation.loop === false;
+    }
+  }
+
+  restartAnimations() {
+    if (!this.mixer || !this.activeActions.length) return false;
+    this.mixer.stopAllAction();
+    this.mixer.setTime(0);
+    const animation = this.state.scene.model.animation;
+    this.activeActions = this.modelAnimations.map(clip => {
+      const action = this.mixer.clipAction(clip);
+      action.enabled = true;
+      action.reset();
+      action.setEffectiveWeight(1);
+      action.setEffectiveTimeScale(1);
+      action.setLoop(animation.loop === false ? THREE.LoopOnce : THREE.LoopRepeat, animation.loop === false ? 1 : Infinity);
+      action.clampWhenFinished = animation.loop === false;
+      action.paused = animation.play === false;
+      action.play();
+      return action;
+    });
+    return true;
   }
 
   updateCamera() {

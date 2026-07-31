@@ -1,53 +1,76 @@
-# Broadcast3D Cloud v0.3.0
+# Broadcast3D Cloud v0.4.0
 
-Webapp para gerar gráficos 3D transparentes sobre o PGM do vMix, publicado com GitHub + Cloudflare Workers.
+Webapp para renderizar uma cena 3D com fundo transparente sobre o PGM do vMix, usando GitHub + Cloudflare Workers.
 
-## Novidades desta versão
+## Fluxo principal
 
-- Importação de **GLB** com materiais, texturas e animações incorporadas.
-- Importação de **OBJ** como geometria estática.
-- Controle de reprodução, loop, velocidade e seleção de clipe de animação GLB.
-- Posição, rotação e escala do modelo 3D por sliders.
-- Até 8 pontos de luz ajustáveis por cor, intensidade, alcance e posição XYZ.
-- Controle de luz ambiente, luz principal e sombra de contato.
-- Presets das quatro câmeras virtuais controlados por sliders de yaw, pitch, distância, FOV e alvo XYZ.
-- Campos numéricos de precisão para yaw, pitch, distância e FOV.
-- Links reais gerados automaticamente para Stream Deck após o deploy.
-- Link fixo de cada câmera virtual e link de corte de cada preset.
-- Botões para copiar, testar e abrir cada link.
-- Upload de mídia ampliado para até 48 MB.
+1. Importe um modelo **GLB** ou **OBJ**.
+2. Ajuste a posição, rotação, escala e iluminação.
+3. Salve os quatro enquadramentos virtuais.
+4. Copie os links reais de câmera e corte para vMix/Stream Deck.
+5. Conecte um Google Sheets público para atualizar o gráfico nativo opcional.
 
-## Formatos 3D
+## Mudanças da versão 0.4.0
+
+- Interface reorganizada em seis áreas claras: Modelo, Câmeras, Luzes, Sheets, Gráfico e Links.
+- Upload GLB/OBJ sempre visível no topo, coluna esquerda e painel Modelo.
+- Ao importar GLB ou OBJ:
+  - o modelo fica visível;
+  - o gráfico nativo é ocultado automaticamente;
+  - o modelo é apoiado diretamente no chão;
+  - o painel abre nos controles do modelo.
+- Em arquivos GLB, **todos os clipes de animação são iniciados simultaneamente no tempo zero**.
+- Cada clipe mantém seus próprios keyframes e duração.
+- Controles globais de play/pausa, loop, velocidade e reinício no tempo zero.
+- Não existe seleção de animação por camada ou por clipe.
+- Importação de CSV removida da interface.
+- Integração com Google Sheets por link público.
+- Atualização manual ou automática, com intervalo configurável.
+- Colunas reconhecidas automaticamente:
+  - `nome` e `valor` — obrigatórias;
+  - `cor` e `imagem` — opcionais.
+- O overlay também consulta o Sheets, portanto pode atualizar mesmo sem o painel do operador aberto.
+- Links amigáveis e reais:
+  - `/camera/1` até `/camera/4`;
+  - `/cut/1` até `/cut/4`;
+  - `/program.html` para o overlay dinâmico.
+
+## Google Sheets
+
+A planilha precisa estar compartilhada como:
+
+```text
+Qualquer pessoa com o link → Leitor
+```
+
+Não é necessário gerar ou importar um arquivo CSV. Cole o link normal da planilha, por exemplo:
+
+```text
+https://docs.google.com/spreadsheets/d/ID_DA_PLANILHA/edit#gid=0
+```
+
+Estrutura recomendada:
+
+| nome | valor | cor | imagem |
+|---|---:|---|---|
+| Candidato A | 42 | #3567d7 | https://.../foto-a.png |
+| Candidato B | 35 | #e34f59 | https://.../foto-b.png |
+
+O campo `imagem` deve usar uma URL HTTPS acessível publicamente.
+
+Nesta versão, planilhas privadas com OAuth ou conta de serviço não estão implementadas.
+
+## Modelos 3D
 
 ### GLB
 
-É o formato recomendado. Pode conter em um único arquivo:
+Formato recomendado. Pode incluir geometria, materiais, texturas, rig, morph targets e animações no mesmo arquivo.
 
-- geometria;
-- materiais;
-- texturas;
-- esqueleto;
-- animações.
+Ao carregar o GLB, o aplicativo cria um relógio global e reproduz todos os clipes encontrados. Clipes com durações diferentes terminam ou reiniciam conforme seus próprios tempos.
 
 ### OBJ
 
-Nesta versão, OBJ é importado somente como geometria estática. Arquivos MTL e texturas externas não são carregados em conjunto. Para preservar materiais e animações, converta para GLB.
-
-## Estrutura
-
-```text
-public/
-├── index.html              painel do operador
-├── program.html            overlay transparente para vMix
-├── js/
-│   ├── operator.js
-│   ├── program.js
-│   ├── cloud.js
-│   └── renderer3d.js       Three.js + GLTFLoader + OBJLoader
-└── assets/
-src/
-└── index.js                Worker + Durable Object
-```
+Importado como geometria estática. Arquivos MTL e texturas externas não são carregados automaticamente. Para preservar materiais e animações, exporte como GLB.
 
 ## Desenvolvimento local
 
@@ -58,16 +81,34 @@ npm install
 npm run dev
 ```
 
-Abra:
+Painel:
 
 ```text
 http://localhost:8787/?room=studio
 ```
 
-Overlay:
+Overlay dinâmico:
 
 ```text
 http://localhost:8787/program.html?room=studio
+```
+
+Câmeras virtuais fixas:
+
+```text
+http://localhost:8787/camera/1?room=studio
+http://localhost:8787/camera/2?room=studio
+http://localhost:8787/camera/3?room=studio
+http://localhost:8787/camera/4?room=studio
+```
+
+Cortes para Stream Deck:
+
+```text
+http://localhost:8787/cut/1?room=studio
+http://localhost:8787/cut/2?room=studio
+http://localhost:8787/cut/3?room=studio
+http://localhost:8787/cut/4?room=studio
 ```
 
 ## Deploy no Cloudflare
@@ -78,7 +119,7 @@ npx wrangler login
 npm run deploy
 ```
 
-Também é possível conectar o repositório no painel **Workers & Pages** para publicar automaticamente a cada push no GitHub.
+Também é possível conectar o repositório GitHub ao Cloudflare para publicar a cada push.
 
 ## vMix
 
@@ -88,19 +129,13 @@ Adicione o overlay como **Web Browser Input**:
 https://SEU-WORKER.workers.dev/program.html?room=studio
 ```
 
-Use 1920×1080, áudio desativado e mantenha o Browser Input em um Overlay sobre o PGM.
+Use 1920×1080, áudio desativado e mantenha a entrada em um Overlay sobre o PGM.
 
 ## Stream Deck
 
-Na aba **Stream Deck**, o painel gera os endereços usando o domínio real em que o app está aberto.
+Cada botão de câmera pode executar uma Multi Action:
 
-Para cada câmera:
+1. Cortar a câmera física no vMix.
+2. Abrir em segundo plano o link `/cut/N?room=studio`.
 
-- `Link de corte`: ativa o preset virtual no overlay dinâmico.
-- `Link da câmera virtual fixa`: abre o overlay travado naquele preset.
-
-No Stream Deck, use a ação **Website** e ative a execução de GET em segundo plano para o link de corte.
-
-## Observação sobre o Three.js
-
-O projeto fixa o Three.js na versão `0.185.1` através de import map, evitando mudanças inesperadas de versão durante a operação.
+A aba **Links** gera os endereços usando o domínio, sala e chave atuais.

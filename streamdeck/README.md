@@ -1,20 +1,18 @@
 # Stream Deck
 
-A forma recomendada é copiar os links diretamente da aba **Stream Deck** do painel já publicado.
+A aba **Links** do painel gera links reais usando o domínio atual, a sala e a chave.
 
-1. Abra o app no domínio Cloudflare.
-2. Entre na sala correta.
-3. Cadastre a chave de controle, quando usada.
-4. Abra a aba **Stream Deck**.
-5. Clique em **Copiar corte** na câmera desejada.
-6. No Stream Deck, adicione a ação **Website**.
-7. Cole a URL e use a opção de GET em segundo plano.
+Exemplo:
 
-Cada link contém:
+```text
+https://SEU-WORKER.workers.dev/cut/1?room=studio&token=SUA_CHAVE
+```
 
-- domínio real do Worker;
-- sala atual;
-- token de controle, quando configurado;
-- número do preset virtual.
+No Stream Deck, use uma ação Website configurada para executar o GET em segundo plano.
 
-Os arquivos BAT desta pasta continuam disponíveis como alternativa para Windows.
+Fluxo recomendado por botão:
+
+1. Cortar a câmera física no vMix.
+2. Executar o link `/cut/N` do Broadcast3D.
+
+Os arquivos BAT desta pasta são exemplos para operação local e devem ter domínio, sala e chave ajustados antes do uso.

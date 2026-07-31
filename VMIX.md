@@ -1,36 +1,53 @@
 # Uso no vMix
 
-## Overlay dinâmico
+## Overlay principal
 
-No vMix:
+Adicione uma entrada:
 
-1. `Add Input`.
-2. `Web Browser`.
-3. Cole o endereço mostrado em **Overlay dinâmico para vMix**.
-4. Configure 1920 × 1080.
-5. Desative áudio.
-6. Use o input em Overlay 1, 2, 3 ou 4 sobre o PGM.
+```text
+Add Input → Web Browser
+```
 
-O fundo do `program.html` é transparente.
+URL:
 
-## Quatro perspectivas
+```text
+https://SEU-WORKER.workers.dev/program.html?room=studio
+```
 
-O mesmo objeto fica fixo no espaço 3D. Cada preset salva uma câmera virtual independente:
+Configuração recomendada:
 
-- CAM 1 — enquadramento A;
-- CAM 2 — enquadramento B;
-- CAM 3 — enquadramento C;
-- CAM 4 — enquadramento D.
+```text
+1920 × 1080
+Áudio desativado
+Fundo transparente
+```
 
-O Stream Deck deve realizar duas ações no mesmo botão:
+Mantenha essa entrada em um Overlay sobre o PGM.
 
-1. cortar a câmera física no vMix;
-2. executar o link de corte do mesmo número no Broadcast3D.
+## Quatro câmeras virtuais
 
-## Links fixos
+O overlay dinâmico usa a perspectiva ativa da sala. Os links de corte são:
 
-Também são gerados quatro links `program.html?camera=N`. Eles mantêm uma perspectiva específica, independentemente do corte ativo, e servem para teste ou para criar quatro Browser Inputs separados.
+```text
+/cut/1?room=studio
+/cut/2?room=studio
+/cut/3?room=studio
+/cut/4?room=studio
+```
 
-## Transições
+As saídas fixas, úteis para conferência, são:
 
-Para manter a correspondência de perspectiva durante o gráfico, priorize CUT entre câmeras. Uma dissolvência mistura duas imagens físicas enquanto o overlay dinâmico utiliza apenas uma perspectiva por vez.
+```text
+/camera/1?room=studio
+/camera/2?room=studio
+/camera/3?room=studio
+/camera/4?room=studio
+```
+
+## GLB animado
+
+Ao importar um GLB, o gráfico nativo é ocultado e todas as animações incorporadas começam juntas no tempo zero. O botão de reinício envia um novo estado para a sala e reinicia também o overlay do vMix.
+
+## Google Sheets
+
+O overlay consulta a planilha pública no intervalo configurado. Assim, os dados do gráfico nativo opcional continuam atualizando mesmo que o painel do operador seja fechado.

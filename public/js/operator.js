@@ -1,5 +1,5 @@
-import { BroadcastRenderer } from './renderer3d.js';
-import { api, connectSocket, controlUrl, fixedProgramUrl, getRoom, getToken, programUrl, setConnection } from './cloud.js';
+import { BroadcastRenderer } from './renderer3d.js?v=0.4.0';
+import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programUrl, setConnection } from './cloud.js?v=0.4.0';
 
 const $ = id => document.getElementById(id);
 const DEG = Math.PI / 180;
@@ -11,6 +11,8 @@ let saveTimer = null;
 let toastTimer = null;
 let suppressInputs = false;
 let socketController = null;
+let sheetTimer = null;
+let sheetBusy = false;
 
 function defaultLight(index = 1) {
   return {
@@ -28,7 +30,7 @@ function defaultLight(index = 1) {
 
 function normalizeState(input) {
   const next = structuredClone(input || {});
-  next.version = 3;
+  next.version = 4;
   next.projectName ||= 'Projeto 3D - Eleições';
   next.activeCamera = Number(next.activeCamera || 1);
   next.selectedCamera = Number(next.selectedCamera || next.activeCamera || 1);
@@ -45,12 +47,14 @@ function normalizeState(input) {
     position: { x: 0, y: 0, z: 0 },
     rotation: { x: 0, y: 0, z: 0 },
     scale: 1,
-    animation: { clipName: '', play: true, loop: true, speed: 1 },
+    animation: { play: true, loop: true, speed: 1, restartToken: 0 },
     ...(next.scene.model || {})
   };
   next.scene.model.position = { x: 0, y: 0, z: 0, ...(next.scene.model.position || {}) };
   next.scene.model.rotation = { x: 0, y: 0, z: 0, ...(next.scene.model.rotation || {}) };
-  next.scene.model.animation = { clipName: '', play: true, loop: true, speed: 1, ...(next.scene.model.animation || {}) };
+  next.scene.model.animation = { play: true, loop: true, speed: 1, restartToken: 0, ...(next.scene.model.animation || {}) };
+  next.scene.generatedGraphVisible = next.scene.generatedGraphVisible ?? !next.scene.model.url;
+  next.scene.dataSource = { type: 'google-sheets', url: '', gid: '0', autoRefresh: true, refreshSeconds: 5, lastUpdated: '', lastRowCount: 0, ...(next.scene.dataSource || {}) };
   next.scene.guideOpacity = Number(next.scene.guideOpacity ?? 0.72);
 
   const defaults = [
@@ -126,14 +130,25 @@ function renderCameraStrip() {
   state.cameras.forEach(camera => {
     const card = document.createElement('article');
     card.className = `camera-card${camera.id === state.activeCamera ? ' active' : ''}${camera.id === state.selectedCamera ? ' selected' : ''}`;
-    card.innerHTML = `<span class="camera-index">${camera.id}</span><h3>Câmera ${camera.id} — ${escapeHtml(camera.name)}</h3><p>FOV ${Number(camera.fov).toFixed(1)}° · distância ${Number(camera.distance).toFixed(2)}</p><button class="card-cut" type="button">CORTAR</button>`;
+    card.innerHTML = `
+      <span class="camera-index">${camera.id}</span>
+      <h3>Câmera ${camera.id} — ${escapeHtml(camera.name)}</h3>
+      <p>FOV ${Number(camera.fov).toFixed(1)}° · distância ${Number(camera.distance).toFixed(2)}</p>
+      <div class="camera-card-actions">
+        <button class="card-cut" type="button">CORTAR</button>
+        <button class="card-link" type="button">COPIAR LINK</button>
+      </div>`;
     card.addEventListener('click', event => {
-      if (event.target.closest('.card-cut')) return;
+      if (event.target.closest('button')) return;
       selectCamera(camera.id);
     });
     card.querySelector('.card-cut').addEventListener('click', event => {
       event.stopPropagation();
       cutCamera(camera.id);
+    });
+    card.querySelector('.card-link').addEventListener('click', event => {
+      event.stopPropagation();
+      copyText(cameraUrl(camera.id), `Link da câmera ${camera.id} copiado`);
     });
     strip.appendChild(card);
   });
@@ -194,6 +209,7 @@ function renderCameraControls() {
   $('selectedCameraPill').textContent = `CAM ${camera.id}`;
   $('previewCameraName').textContent = `Câmera ${camera.id} — ${camera.name}`;
   $('guideOpacity').value = state.scene.guideOpacity;
+  if ($('selectedCameraUrl')) $('selectedCameraUrl').value = cameraUrl(camera.id);
   suppressInputs = false;
 }
 
@@ -237,6 +253,8 @@ function renderSceneControls() {
   $('ambientLight').value = state.scene.lighting.ambient;
   $('keyLight').value = state.scene.lighting.key;
   $('shadowOpacity').value = state.scene.lighting.shadowOpacity;
+  $('generatedGraphVisible').checked = state.scene.generatedGraphVisible !== false;
+  renderSheetControls();
   suppressInputs = false;
   renderReadouts();
   renderBarItems();
@@ -262,7 +280,11 @@ function renderReadouts() {
   ];
   pairs.forEach(([id, value]) => { if ($(id)) $(id).textContent = value; });
   $('programCameraLabel').textContent = `CAM ${state.activeCamera}`;
-  $('toggleOutputButton').textContent = state.outputVisible ? 'Ocultar gráfico' : 'Mostrar gráfico';
+  $('toggleOutputButton').textContent = state.outputVisible ? 'Ocultar cena' : 'Mostrar cena';
+  const graphVisible = state.scene.generatedGraphVisible !== false;
+  if ($('graphVisibilityPill')) $('graphVisibilityPill').textContent = graphVisible ? 'VISÍVEL' : 'OCULTO';
+  if ($('graphVisibilityPill')) $('graphVisibilityPill').className = `pill ${graphVisible ? 'ready' : ''}`;
+  if ($('sceneModeBadge')) $('sceneModeBadge').textContent = state.scene.model.url ? `MODO: MODELO ${String(state.scene.model.format || '').toUpperCase()}` : 'MODO: GRÁFICO NATIVO';
   document.querySelectorAll('.cut-button').forEach(button => button.classList.toggle('active', Number(button.dataset.cut) === state.activeCamera));
 }
 
@@ -298,11 +320,110 @@ function makeInitialSvg(item) {
   return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Ccircle cx='60' cy='60' r='56' fill='${color}'/%3E%3Ctext x='60' y='75' text-anchor='middle' font-family='Arial' font-size='52' font-weight='700' fill='white'%3E${text}%3C/text%3E%3C/svg%3E`;
 }
 
+
+function formatSheetDate(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'medium' }).format(date);
+}
+
+function renderSheetControls() {
+  if (!state?.scene?.dataSource) return;
+  const source = state.scene.dataSource;
+  const connected = Boolean(source.url);
+  $('sheetUrl').value = source.url || '';
+  $('sheetUrlQuick').value = source.url || '';
+  $('sheetGid').value = source.gid || '0';
+  $('sheetRefreshSeconds').value = Math.max(3, Number(source.refreshSeconds || 5));
+  $('sheetAutoRefresh').checked = source.autoRefresh !== false;
+  $('sheetLastUpdate').textContent = formatSheetDate(source.lastUpdated);
+  $('sheetConnectionPill').textContent = connected ? 'CONECTADO' : 'DESCONECTADO';
+  $('sheetConnectionPill').className = `pill ${connected ? 'ready' : ''}`;
+  $('sheetStatusPill').textContent = connected ? 'CONECTADO' : 'GOOGLE SHEETS';
+  $('sheetStatusPill').className = `pill ${connected ? 'ready' : ''}`;
+  const summary = connected
+    ? `${Number(source.lastRowCount || state.scene.items.length)} linhas · GID ${source.gid || '0'}`
+    : 'Nenhuma planilha conectada';
+  $('sheetQuickStatus').textContent = summary;
+  if (!$('sheetStatus').dataset.busy) $('sheetStatus').textContent = connected
+    ? `Planilha configurada. ${summary}.`
+    : 'Nenhuma planilha conectada.';
+
+  const preview = $('sheetPreview');
+  preview.innerHTML = '';
+  state.scene.items.slice(0, 8).forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'sheet-preview-row';
+    row.innerHTML = `<span style="--item-color:${escapeHtml(item.color || '#3567d7')}"></span><strong>${escapeHtml(item.name)}</strong><b>${Number(item.value).toLocaleString('pt-BR')}</b>`;
+    preview.appendChild(row);
+  });
+  if (!state.scene.items.length) preview.innerHTML = '<span class="helper">Nenhuma linha carregada.</span>';
+}
+
+function syncSheetInputsToState() {
+  const source = state.scene.dataSource;
+  source.url = String($('sheetUrl').value || $('sheetUrlQuick').value || '').trim();
+  source.gid = String($('sheetGid').value || '0').replace(/[^0-9]/g, '') || '0';
+  source.refreshSeconds = Math.max(3, Math.min(3600, Number($('sheetRefreshSeconds').value || 5)));
+  source.autoRefresh = $('sheetAutoRefresh').checked;
+}
+
+function scheduleSheetRefresh() {
+  clearInterval(sheetTimer);
+  sheetTimer = null;
+  const source = state?.scene?.dataSource;
+  if (!source?.url || source.autoRefresh === false) return;
+  const seconds = Math.max(3, Math.min(3600, Number(source.refreshSeconds || 5)));
+  sheetTimer = setInterval(() => refreshGoogleSheet({ persist: false, silent: true }), seconds * 1000);
+}
+
+async function refreshGoogleSheet({ persist = true, silent = false } = {}) {
+  if (sheetBusy) return;
+  syncSheetInputsToState();
+  const source = state.scene.dataSource;
+  if (!source.url) {
+    if (!silent) showToast('Cole o link público do Google Sheets.');
+    return;
+  }
+  sheetBusy = true;
+  $('sheetStatus').dataset.busy = '1';
+  $('sheetStatus').textContent = 'Lendo Google Sheets…';
+  $('connectSheetButton').disabled = true;
+  $('refreshSheetButton').disabled = true;
+  try {
+    const params = new URLSearchParams({ source: source.url, gid: source.gid || '0' });
+    const result = await api(`/api/sheets?${params.toString()}`);
+    const previous = new Map(state.scene.items.map(item => [String(item.name).trim().toLowerCase(), item]));
+    state.scene.items = (result.items || []).map(item => {
+      const old = previous.get(String(item.name).trim().toLowerCase());
+      return { ...item, imageUrl: item.imageUrl || old?.imageUrl || '' };
+    });
+    source.lastUpdated = result.fetchedAt || new Date().toISOString();
+    source.lastRowCount = state.scene.items.length;
+    renderer.setState(state);
+    renderBarItems();
+    renderSheetControls();
+    $('sheetStatus').textContent = `${state.scene.items.length} linhas atualizadas com sucesso.`;
+    if (persist) queueSave('Google Sheets atualizado');
+    else if (!silent) showToast('Google Sheets atualizado');
+  } catch (error) {
+    $('sheetStatus').textContent = error.message;
+    if (!silent) showToast(error.message);
+  } finally {
+    delete $('sheetStatus').dataset.busy;
+    $('connectSheetButton').disabled = false;
+    $('refreshSheetButton').disabled = false;
+    scheduleSheetRefresh();
+  }
+}
+
 function renderModelControls() {
   const model = state.scene.model;
   suppressInputs = true;
   $('modelVisible').checked = Boolean(model.visible);
   $('modelFileName').textContent = model.name || 'Nenhum modelo carregado';
+  if ($('modelQuickStatus')) $('modelQuickStatus').textContent = model.name || 'Nenhum modelo carregado';
   $('modelFormatPill').textContent = model.format ? model.format.toUpperCase() : 'VAZIO';
 
   const controls = [
@@ -317,28 +438,25 @@ function renderModelControls() {
   $('modelAnimationPlay').checked = model.animation.play !== false;
   $('modelAnimationLoop').checked = model.animation.loop !== false;
 
-  const select = $('modelAnimationClip');
-  select.innerHTML = '';
+  const list = $('animationList');
+  list.innerHTML = '';
   if (!availableAnimations.length) {
-    const option = document.createElement('option');
-    option.value = '';
-    option.textContent = model.format === 'obj' ? 'OBJ não possui animações' : 'Nenhuma animação encontrada';
-    select.appendChild(option);
-    select.disabled = true;
+    const empty = document.createElement('span');
+    empty.textContent = model.format === 'obj' ? 'OBJ é estático e não possui animações.' : 'Nenhuma animação detectada.';
+    list.appendChild(empty);
   } else {
-    select.disabled = false;
-    availableAnimations.forEach((name, index) => {
-      const option = document.createElement('option');
-      option.value = name;
-      option.textContent = `${index + 1}. ${name || `Animação ${index + 1}`}`;
-      select.appendChild(option);
+    availableAnimations.forEach((clip, index) => {
+      const row = document.createElement('div');
+      row.className = 'animation-row';
+      const name = typeof clip === 'string' ? clip : clip.name;
+      const duration = typeof clip === 'object' ? Number(clip.duration || 0) : 0;
+      row.innerHTML = `<span>${index + 1}</span><strong>${escapeHtml(name || `Animação ${index + 1}`)}</strong><small>${duration.toFixed(2)} s</small>`;
+      list.appendChild(row);
     });
-    select.value = availableAnimations.includes(model.animation.clipName) ? model.animation.clipName : availableAnimations[0];
   }
   $('animationCount').textContent = `${availableAnimations.length} ${availableAnimations.length === 1 ? 'CLIPE' : 'CLIPES'}`;
   suppressInputs = false;
 }
-
 function renderLights() {
   const list = $('lightList');
   list.innerHTML = '';
@@ -405,11 +523,46 @@ async function uploadFile(file) {
   return result.url;
 }
 
+function openPanel(name) {
+  const tab = document.querySelector(`.tab[data-tab="${name}"]`);
+  if (!tab) return;
+  document.querySelectorAll('.tab').forEach(item => item.classList.toggle('active', item === tab));
+  document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('active', panel.dataset.panel === name));
+  tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+}
+
+function renderCameraLinksDialog() {
+  const container = $('cameraLinksDialogContent');
+  if (!container || !state) return;
+  container.innerHTML = '';
+  state.cameras.forEach(camera => {
+    const virtual = cameraUrl(camera.id);
+    const cut = cutUrl(camera.id);
+    const card = document.createElement('article');
+    card.className = 'camera-link-dialog-card';
+    card.innerHTML = `
+      <div class="streamdeck-card-head"><strong>CAM ${camera.id}</strong><span>${escapeHtml(camera.name)}</span></div>
+      <label>Câmera virtual fixa<input data-virtual type="text" readonly value="${escapeHtml(virtual)}"></label>
+      <div class="button-row"><button data-copy-virtual class="button primary" type="button">Copiar câmera</button><button data-open-virtual class="button secondary" type="button">Abrir</button></div>
+      <label>Corte / Stream Deck<input data-cut type="text" readonly value="${escapeHtml(cut)}"></label>
+      <button data-copy-cut class="button secondary full" type="button">Copiar corte</button>`;
+    card.querySelector('[data-copy-virtual]').addEventListener('click', () => copyText(virtual, `Link CAM ${camera.id} copiado`));
+    card.querySelector('[data-open-virtual]').addEventListener('click', () => window.open(virtual, `broadcast3d-camera-${camera.id}`));
+    card.querySelector('[data-copy-cut]').addEventListener('click', () => copyText(cut, `Corte CAM ${camera.id} copiado`));
+    container.appendChild(card);
+  });
+}
+
+function openCameraLinksDialog() {
+  renderCameraLinksDialog();
+  const dialog = $('cameraLinksDialog');
+  if (dialog?.showModal) dialog.showModal();
+  else dialog?.setAttribute('open', '');
+}
+
 function bindTabs() {
-  document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(item => item.classList.toggle('active', item === tab));
-    document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('active', panel.dataset.panel === tab.dataset.tab));
-  }));
+  document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => openPanel(tab.dataset.tab)));
+  document.querySelectorAll('[data-open-panel]').forEach(button => button.addEventListener('click', () => openPanel(button.dataset.openPanel)));
 }
 
 function bindSceneInputs() {
@@ -430,15 +583,10 @@ function bindSceneInputs() {
     const value = type === 'number' ? Number(event.target.value) : type === 'checked' ? event.target.checked : event.target.value;
     setNested(path, value);
     if (id === 'guideOpacity') updateGuide(selectedCamera());
+    if (id === 'generatedGraphVisible') renderReadouts();
     if (id.startsWith('model')) renderModelControls();
   }));
 
-  $('modelAnimationClip').addEventListener('change', event => {
-    if (suppressInputs) return;
-    state.scene.model.animation.clipName = event.target.value;
-    renderer.setState(state);
-    queueSave('Animação selecionada');
-  });
 }
 
 function bindCameraControls() {
@@ -472,38 +620,7 @@ function bindCameraControls() {
   $('resetViewButton').addEventListener('click', () => selectCamera(state.selectedCamera, false));
 }
 
-function parseCsv(text) {
-  const lines = String(text).replace(/^\uFEFF/, '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-  if (lines.length < 2) throw new Error('O CSV precisa ter cabeçalho e pelo menos uma linha.');
-  const delimiter = lines[0].includes(';') ? ';' : ',';
-  const headers = lines[0].split(delimiter).map(value => value.trim().toLowerCase());
-  const nameIndex = headers.findIndex(value => ['nome', 'name', 'item'].includes(value));
-  const valueIndex = headers.findIndex(value => ['valor', 'value', 'total'].includes(value));
-  const colorIndex = headers.findIndex(value => ['cor', 'color'].includes(value));
-  if (nameIndex < 0 || valueIndex < 0) throw new Error('Use as colunas nome e valor.');
-  return lines.slice(1).map((line, index) => {
-    const columns = line.split(delimiter).map(value => value.trim());
-    const name = columns[nameIndex] || `Item ${index + 1}`;
-    const value = Number(String(columns[valueIndex] || '0').replace(',', '.')) || 0;
-    const color = /^#[0-9a-f]{6}$/i.test(columns[colorIndex] || '') ? columns[colorIndex] : ['#3567d7', '#10a9a6', '#7650a8', '#e9781b'][index % 4];
-    return { id: `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${index}`, name, value, color, imageUrl: '' };
-  }).slice(0, 16);
-}
-
 function bindUploads() {
-  $('csvInput').addEventListener('change', async () => {
-    try {
-      const file = $('csvInput').files[0];
-      if (!file) return;
-      state.scene.items = parseCsv(await file.text());
-      renderer.setState(state);
-      renderAll();
-      queueSave('CSV importado');
-    } catch (error) {
-      showToast(error.message);
-    }
-  });
-
   $('baseInput').addEventListener('change', async () => {
     const file = $('baseInput').files[0];
     if (!file) return;
@@ -539,13 +656,17 @@ function bindUploads() {
       state.scene.model.name = file.name;
       state.scene.model.format = extension;
       state.scene.model.visible = true;
-      state.scene.model.animation.clipName = '';
+      state.scene.model.animation = { play: true, loop: true, speed: 1, restartToken: Date.now() };
+      state.scene.generatedGraphVisible = false;
       availableAnimations = [];
       renderer.setState(state);
-      renderModelControls();
-      queueSave('Modelo 3D importado');
+      renderAll();
+      openPanel('model');
+      queueSave(`${extension.toUpperCase()} importado · gráfico nativo ocultado`);
     } catch (error) {
       showToast(error.message);
+    } finally {
+      $('modelInput').value = '';
     }
   });
 
@@ -559,12 +680,13 @@ function bindUploads() {
     state.scene.model = {
       url: '', name: '', format: '', visible: true,
       position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: 1,
-      animation: { clipName: '', play: true, loop: true, speed: 1 }
+      animation: { play: true, loop: true, speed: 1, restartToken: 0 }
     };
+    state.scene.generatedGraphVisible = true;
     availableAnimations = [];
     renderer.setState(state);
-    renderModelControls();
-    queueSave('Modelo removido');
+    renderAll();
+    queueSave('Modelo removido · gráfico nativo exibido');
   });
 }
 
@@ -602,12 +724,14 @@ function updateCloudLinks() {
   $('roomInput').value = room;
   $('tokenInput').value = getToken();
   $('roomBadge').textContent = `SALA ${room.toUpperCase()}`;
+  if ($('selectedCameraUrl') && state) $('selectedCameraUrl').value = cameraUrl(selectedCamera().id, room);
+  if ($('cameraLinksDialog')?.open) renderCameraLinksDialog();
 
   const container = $('streamDeckLinks');
   container.innerHTML = '';
   for (let id = 1; id <= 4; id += 1) {
-    const cut = controlUrl(`/api/cut/${id}`, room);
-    const virtual = fixedProgramUrl(id, room);
+    const cut = cutUrl(id, room);
+    const virtual = cameraUrl(id, room);
     const camera = state?.cameras?.find(entry => entry.id === id);
     const card = document.createElement('article');
     card.className = 'streamdeck-card';
@@ -633,6 +757,7 @@ async function loadRoom() {
   workingCamera = structuredClone(selectedCamera());
   renderer.setCamera(workingCamera);
   renderAll();
+  scheduleSheetRefresh();
   connectEvents();
 }
 
@@ -649,8 +774,54 @@ function bindCloudControls() {
   });
 }
 
+function bindSheetControls() {
+  const copyQuickToMain = () => {
+    const value = String($('sheetUrlQuick').value || '').trim();
+    if (value) $('sheetUrl').value = value;
+  };
+  $('sheetUrlQuick').addEventListener('input', copyQuickToMain);
+  $('sheetUrl').addEventListener('input', () => { $('sheetUrlQuick').value = $('sheetUrl').value; });
+  $('connectSheetQuickButton').addEventListener('click', async () => {
+    copyQuickToMain();
+    openPanel('sheets');
+    await refreshGoogleSheet({ persist: true });
+  });
+  $('openSheetControlsButton').addEventListener('click', () => openPanel('sheets'));
+  $('connectSheetButton').addEventListener('click', () => refreshGoogleSheet({ persist: true }));
+  $('refreshSheetButton').addEventListener('click', () => refreshGoogleSheet({ persist: true }));
+  ['sheetUrl', 'sheetGid', 'sheetRefreshSeconds', 'sheetAutoRefresh'].forEach(id => {
+    $(id).addEventListener('change', () => {
+      if (!state || suppressInputs) return;
+      syncSheetInputsToState();
+      renderSheetControls();
+      scheduleSheetRefresh();
+      queueSave('Configuração do Google Sheets salva');
+    });
+  });
+}
+
 function bindActions() {
   document.querySelectorAll('[data-cut]').forEach(button => button.addEventListener('click', () => cutCamera(Number(button.dataset.cut))));
+  $('quickModelButton').addEventListener('click', () => $('modelInput').click());
+  $('leftModelButton').addEventListener('click', () => $('modelInput').click());
+  $('openModelControlsButton').addEventListener('click', () => openPanel('model'));
+  $('quickSheetsButton').addEventListener('click', () => openPanel('sheets'));
+  $('quickLightsButton').addEventListener('click', () => openPanel('lights'));
+  $('quickLinksButton').addEventListener('click', openCameraLinksDialog);
+  $('openCameraLinksButton').addEventListener('click', openCameraLinksDialog);
+  $('closeCameraLinksButton').addEventListener('click', () => $('cameraLinksDialog').close());
+  $('cameraLinksDialog').addEventListener('click', event => { if (event.target === $('cameraLinksDialog')) $('cameraLinksDialog').close(); });
+  $('goToStreamDeckButton').addEventListener('click', () => { $('cameraLinksDialog').close(); openPanel('streamdeck'); });
+  $('copySelectedCameraUrl').addEventListener('click', () => copyText(cameraUrl(selectedCamera().id), `Link da câmera ${selectedCamera().id} copiado`));
+  $('openSelectedCameraUrl').addEventListener('click', () => window.open(cameraUrl(selectedCamera().id), `broadcast3d-camera-${selectedCamera().id}`));
+  $('copyAllCameraLinksDialogButton').addEventListener('click', () => {
+    const lines = [];
+    for (let id = 1; id <= 4; id += 1) {
+      lines.push(`CAM ${id} - VIRTUAL: ${cameraUrl(id)}`);
+      lines.push(`CAM ${id} - CORTE: ${cutUrl(id)}`);
+    }
+    copyText(lines.join('\n'), 'Links das quatro câmeras copiados');
+  });
   $('toggleOutputButton').addEventListener('click', async () => {
     try {
       await api('/api/output/toggle', { method: 'POST', body: '{}' });
@@ -665,8 +836,8 @@ function bindActions() {
   $('copyAllStreamDeckButton').addEventListener('click', () => {
     const lines = [];
     for (let id = 1; id <= 4; id += 1) {
-      lines.push(`CAM ${id} - CORTE: ${controlUrl(`/api/cut/${id}`)}`);
-      lines.push(`CAM ${id} - VIRTUAL: ${fixedProgramUrl(id)}`);
+      lines.push(`CAM ${id} - CORTE: ${cutUrl(id)}`);
+      lines.push(`CAM ${id} - VIRTUAL: ${cameraUrl(id)}`);
     }
     lines.push(`OVERLAY DINÂMICO: ${programUrl()}`);
     lines.push(`EXIBIR/OCULTAR: ${controlUrl('/api/output/toggle')}`);
@@ -688,7 +859,15 @@ function bindActions() {
       showToast('Projeto inválido');
     }
   });
-  $('downloadCsvButton').addEventListener('click', () => download('exemplo-grafico.csv', 'nome;valor;cor\nIndústria;128;#3567d7\nVarejo;198;#10a9a6\nServiços;256;#7650a8\nTecnologia;312;#e9781b', 'text/csv'));
+  $('restartAnimationsButton').addEventListener('click', () => {
+    state.scene.model.animation.play = true;
+    state.scene.model.animation.restartToken = Date.now();
+    $('modelAnimationPlay').checked = true;
+    renderer.setState(state);
+    queueSave('Animações reiniciadas no tempo zero');
+    showToast(availableAnimations.length ? 'Todas as animações reiniciadas' : 'O modelo não possui animações');
+  });
+
   $('addLightButton').addEventListener('click', () => {
     if (state.scene.lights.length >= 8) return;
     state.scene.lights.push(defaultLight(state.scene.lights.length + 1));
@@ -713,6 +892,7 @@ function connectEvents() {
       renderer.setState(state);
       if (payload.type === 'cut') selectCamera(state.activeCamera, false);
       else renderAll();
+      scheduleSheetRefresh();
     }
   });
 }
@@ -731,6 +911,7 @@ async function init() {
   bindCameraControls();
   bindUploads();
   bindCloudControls();
+  bindSheetControls();
   bindActions();
   try {
     await loadRoom();

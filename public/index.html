@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Broadcast3D Cloud</title>
-  <link rel="stylesheet" href="/styles.css">
+  <title>Broadcast3D Cloud v0.4.0</title>
+  <link rel="stylesheet" href="/styles.css?v=0.4.0">
   <script type="importmap">
   {
     "imports": {
@@ -19,7 +19,7 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark">3D</div>
-        <div><strong>Broadcast3D Cloud</strong><span>Overlay 3D para vMix · GitHub + Cloudflare</span></div>
+        <div><strong>Broadcast3D Cloud <small class="version-badge">v0.4.0</small></strong><span>GLB animado + Google Sheets + overlay transparente para vMix</span></div>
       </div>
       <div class="top-actions cloud-top-actions">
         <span id="connectionBadge" class="status-badge">Conectando</span>
@@ -27,8 +27,9 @@
         <label class="cloud-field"><span>Sala</span><input id="roomInput" type="text" value="studio" maxlength="64" autocomplete="off"></label>
         <label class="cloud-field"><span>Chave</span><input id="tokenInput" type="password" autocomplete="off" placeholder="opcional"></label>
         <button id="connectRoomButton" class="button secondary" type="button">Conectar</button>
-        <button id="importProjectButton" class="button secondary" type="button">Importar</button>
+        <button id="importProjectButton" class="button secondary" type="button">Importar projeto</button>
         <button id="exportProjectButton" class="button secondary" type="button">Exportar</button>
+        <button id="openCameraLinksButton" class="button secondary" type="button">Links das câmeras</button>
         <button id="openProgramButton" class="button primary" type="button">Abrir overlay</button>
         <input id="importProjectInput" type="file" accept="application/json,.json" hidden>
       </div>
@@ -36,18 +37,44 @@
 
     <section class="camera-strip" id="cameraStrip" aria-label="Presets de câmera"></section>
 
+    <section class="quick-actions workflow-actions" aria-label="Fluxo principal">
+      <div class="quick-actions-title"><strong>Fluxo principal</strong><span>1. Modelo · 2. Dados · 3. Luzes · 4. Links</span></div>
+      <button id="quickModelButton" class="quick-action primary-action" type="button"><span class="quick-icon">1</span><span><strong>Importar GLB / OBJ</strong><small>O GLB inicia todas as animações</small></span></button>
+      <button id="quickSheetsButton" class="quick-action" type="button"><span class="quick-icon">2</span><span><strong>Google Sheets</strong><small>Substitui a importação por CSV</small></span></button>
+      <button id="quickLightsButton" class="quick-action" type="button"><span class="quick-icon">3</span><span><strong>Ajustar luzes</strong><small>Ambiente e pontos de luz</small></span></button>
+      <button id="quickLinksButton" class="quick-action" type="button"><span class="quick-icon">4</span><span><strong>Câmeras / Stream Deck</strong><small>Links reais CAM 1 a CAM 4</small></span></button>
+    </section>
+
     <main class="workspace">
       <aside class="sidebar left-panel">
+        <section class="panel-section import-spotlight">
+          <div class="section-title"><span>Modelo principal</span><span class="pill ready">GLB / OBJ</span></div>
+          <button id="leftModelButton" class="button primary full model-import-main" type="button">+ IMPORTAR MODELO 3D</button>
+          <div id="modelQuickStatus" class="file-status prominent">Nenhum modelo carregado</div>
+          <button id="openModelControlsButton" class="button secondary full" type="button">Abrir controles do modelo</button>
+          <p class="helper">Ao importar um modelo, o gráfico nativo é ocultado automaticamente. Em GLB, todos os clipes são reproduzidos juntos desde o tempo zero.</p>
+        </section>
+
+        <section class="panel-section sheets-spotlight">
+          <div class="section-title"><span>Dados ao vivo</span><span id="sheetStatusPill" class="pill">GOOGLE SHEETS</span></div>
+          <label class="field">Link público da planilha<input id="sheetUrlQuick" type="url" placeholder="https://docs.google.com/spreadsheets/d/..."></label>
+          <div class="button-row">
+            <button id="connectSheetQuickButton" class="button primary" type="button">Conectar</button>
+            <button id="openSheetControlsButton" class="button secondary" type="button">Configurar</button>
+          </div>
+          <div id="sheetQuickStatus" class="file-status">Nenhuma planilha conectada</div>
+        </section>
+
         <section class="panel-section">
           <div class="section-title"><span>Cena</span><span id="lockBadge" class="pill locked">TRAVADO</span></div>
           <label class="field">Nome do projeto<input id="projectName" type="text"></label>
           <div class="layer-list">
-            <div class="layer-row"><span>◈</span><span>Base PNG extrudada</span><b>🔒</b></div>
-            <div class="layer-row"><span>▥</span><span>Barras do CSV</span><b>🔒</b></div>
-            <div class="layer-row"><span>◆</span><span>Modelo GLB/OBJ</span><b>🔒</b></div>
-            <div class="layer-row"><span>✦</span><span>Pontos de luz</span><b>🔒</b></div>
-            <div class="layer-row"><span>◉</span><span>Imagens ilustrativas</span><b>🔒</b></div>
-            <div class="layer-row"><span>T</span><span>Valores e nomes</span><b>🔒</b></div>
+            <button class="layer-row layer-button emphasis" data-open-panel="model" type="button"><span>◆</span><span>Modelo GLB / OBJ</span><b>ABRIR</b></button>
+            <button class="layer-row layer-button" data-open-panel="camera" type="button"><span>◉</span><span>4 câmeras virtuais</span><b>ABRIR</b></button>
+            <button class="layer-row layer-button" data-open-panel="lights" type="button"><span>✦</span><span>Pontos de luz</span><b>ABRIR</b></button>
+            <button class="layer-row layer-button" data-open-panel="sheets" type="button"><span>▦</span><span>Google Sheets</span><b>ABRIR</b></button>
+            <button class="layer-row layer-button" data-open-panel="graph" type="button"><span>▥</span><span>Gráfico nativo opcional</span><b>ABRIR</b></button>
+            <button class="layer-row layer-button" data-open-panel="streamdeck" type="button"><span>↗</span><span>Links reais</span><b>ABRIR</b></button>
             <div class="layer-row"><span>⌖</span><span>Âncora no chão</span><b>🔒</b></div>
           </div>
         </section>
@@ -63,25 +90,17 @@
           <label class="switch-row"><input id="anchorLocked" type="checkbox"><span>Bloquear transformações ao vivo</span></label>
         </section>
 
-        <section class="panel-section">
-          <div class="section-title"><span>Dados</span></div>
-          <label class="upload-drop" for="csvInput"><strong>Importar CSV</strong><span>nome, valor, cor</span></label>
-          <input id="csvInput" type="file" accept=".csv,text/csv" hidden>
-          <button id="downloadCsvButton" class="button secondary full" type="button">Baixar CSV de exemplo</button>
-          <p class="helper">A altura muda conforme o valor. O objeto, a base e o modelo permanecem ancorados.</p>
-        </section>
-
         <section class="panel-section compact-status">
           <div><span>Render</span><b>Three.js / WebGL 2</b></div>
           <div><span>Saída</span><b>Alpha transparente</b></div>
-          <div><span>Sincronização</span><b>WebSocket</b></div>
-          <div><span>Modelos</span><b>GLB animado / OBJ estático</b></div>
+          <div><span>Dados</span><b>Google Sheets</b></div>
+          <div><span>Animação</span><b>Todos os clipes GLB</b></div>
         </section>
       </aside>
 
       <section class="preview-column">
         <div class="preview-toolbar">
-          <div><strong id="previewCameraName">Câmera 1 — Enquadramento A</strong><span>Use os sliders ou arraste para orbitar · Shift + arraste para mover · Scroll para zoom</span></div>
+          <div><strong id="previewCameraName">Câmera 1 — Enquadramento A</strong><span>Sliders ou arraste para orbitar · Shift + arraste para mover · Scroll para zoom</span></div>
           <div class="preview-actions">
             <button id="resetViewButton" class="button secondary" type="button">Recarregar preset</button>
             <button id="saveCameraButton" class="button primary" type="button">Salvar enquadramento</button>
@@ -90,14 +109,15 @@
         <div id="previewStage" class="preview-stage">
           <div class="studio-backdrop"></div>
           <img id="guideImage" class="guide-image" alt="Guia de alinhamento da câmera">
-          <canvas id="previewCanvas" aria-label="Prévia do gráfico 3D"></canvas>
-          <div class="anchor-status"><span class="dot green"></span> OBJETO FIXO NO CHÃO</div>
+          <canvas id="previewCanvas" aria-label="Prévia da cena 3D"></canvas>
+          <div class="anchor-status"><span class="dot green"></span> CENA FIXA NO CHÃO</div>
+          <div id="sceneModeBadge" class="scene-mode-badge">MODO: GRÁFICO NATIVO</div>
           <div id="saveToast" class="save-toast" aria-live="polite">Projeto salvo</div>
         </div>
         <div class="program-bar">
           <div class="program-status"><span class="dot red"></span><strong>PROGRAMA</strong><span id="programCameraLabel">CAM 1</span></div>
           <div class="program-controls">
-            <button id="toggleOutputButton" class="button danger" type="button">Ocultar gráfico</button>
+            <button id="toggleOutputButton" class="button danger" type="button">Ocultar cena</button>
             <button class="cut-button" data-cut="1" type="button">CUT 1</button>
             <button class="cut-button" data-cut="2" type="button">CUT 2</button>
             <button class="cut-button" data-cut="3" type="button">CUT 3</button>
@@ -108,70 +128,20 @@
 
       <aside class="sidebar right-panel">
         <nav class="tabs six" aria-label="Painéis">
-          <button class="tab active" data-tab="camera" type="button">Câmera</button>
-          <button class="tab" data-tab="base" type="button">Base</button>
-          <button class="tab" data-tab="bars" type="button">Barras</button>
-          <button class="tab" data-tab="model" type="button">Modelo</button>
-          <button class="tab" data-tab="lights" type="button">Luzes</button>
-          <button class="tab" data-tab="streamdeck" type="button">Stream Deck</button>
+          <button class="tab active" data-tab="model" type="button">1 · Modelo</button>
+          <button class="tab" data-tab="camera" type="button">2 · Câmeras</button>
+          <button class="tab" data-tab="lights" type="button">3 · Luzes</button>
+          <button class="tab" data-tab="sheets" type="button">4 · Sheets</button>
+          <button class="tab" data-tab="graph" type="button">5 · Gráfico</button>
+          <button class="tab" data-tab="streamdeck" type="button">6 · Links</button>
         </nav>
 
-        <section class="tab-panel active" data-panel="camera">
-          <div class="section-title"><span>Preset selecionado</span><span id="selectedCameraPill" class="pill">CAM 1</span></div>
-          <label class="field">Nome<input id="cameraName" type="text"></label>
-
-          <label class="range-field camera-range">Yaw <output id="cameraYawOutput"></output><input id="cameraYaw" type="range" min="-360" max="360" step="0.1"></label>
-          <label class="range-field camera-range">Pitch <output id="cameraPitchOutput"></output><input id="cameraPitch" type="range" min="-89" max="89" step="0.1"></label>
-          <label class="range-field camera-range">Distância <output id="cameraDistanceOutput"></output><input id="cameraDistance" type="range" min="2" max="60" step="0.01"></label>
-          <label class="range-field camera-range">FOV <output id="cameraFovOutput"></output><input id="cameraFov" type="range" min="15" max="100" step="0.1"></label>
-          <label class="range-field camera-range">Alvo X <output id="targetXOutput"></output><input id="targetX" type="range" min="-20" max="20" step="0.01"></label>
-          <label class="range-field camera-range">Alvo Y <output id="targetYOutput"></output><input id="targetY" type="range" min="-5" max="20" step="0.01"></label>
-          <label class="range-field camera-range">Alvo Z <output id="targetZOutput"></output><input id="targetZ" type="range" min="-20" max="20" step="0.01"></label>
-
-          <div class="camera-precision-grid">
-            <label>Yaw<input id="cameraYawNumber" type="number" step="0.1"></label>
-            <label>Pitch<input id="cameraPitchNumber" type="number" step="0.1"></label>
-            <label>Distância<input id="cameraDistanceNumber" type="number" step="0.01"></label>
-            <label>FOV<input id="cameraFovNumber" type="number" step="0.1"></label>
-          </div>
-
-          <div class="divider"></div>
-          <div class="section-title"><span>Guia de alinhamento</span></div>
-          <label class="upload-drop" for="guideInput"><strong>Adicionar frame da câmera</strong><span>Usado apenas na prévia</span></label>
-          <input id="guideInput" type="file" accept="image/png,image/jpeg,image/webp" hidden>
-          <label class="range-field">Opacidade do guia <output id="guideOpacityOutput"></output><input id="guideOpacity" type="range" min="0" max="1" step="0.01"></label>
-          <button id="removeGuideButton" class="button secondary full" type="button">Remover guia</button>
-        </section>
-
-        <section class="tab-panel" data-panel="base">
-          <div class="section-title"><span>Base PNG</span></div>
-          <label class="upload-drop" for="baseInput"><strong>Carregar PNG transparente</strong><span>A silhueta vira uma base extrudada</span></label>
-          <input id="baseInput" type="file" accept="image/png" hidden>
-          <label class="range-field">Extrusão <output id="baseThicknessOutput"></output><input id="baseThickness" type="range" min="0.05" max="1.5" step="0.01"></label>
-          <label class="range-field">Tamanho <output id="baseScaleOutput"></output><input id="baseScale" type="range" min="3" max="18" step="0.1"></label>
-          <label class="range-field">Leitura do recorte <output id="alphaThresholdOutput"></output><input id="alphaThreshold" type="range" min="0.02" max="0.8" step="0.01"></label>
-          <label class="field color-field">Cor lateral<input id="baseColor" type="color"></label>
-          <p class="helper">Use PNG com fundo transparente. A parte opaca define o formato extrudado.</p>
-        </section>
-
-        <section class="tab-panel" data-panel="bars">
-          <div class="section-title"><span>Geometria</span></div>
-          <label class="range-field">Largura das barras <output id="barWidthOutput"></output><input id="barWidth" type="range" min="0.2" max="2.2" step="0.02"></label>
-          <label class="range-field">Profundidade <output id="barDepthOutput"></output><input id="barDepth" type="range" min="0.2" max="2" step="0.02"></label>
-          <label class="range-field">Altura máxima <output id="barHeightOutput"></output><input id="barHeight" type="range" min="1" max="8" step="0.1"></label>
-          <label class="range-field">Espaçamento <output id="barGapOutput"></output><input id="barGap" type="range" min="0" max="2" step="0.02"></label>
-          <label class="range-field">Escala das imagens <output id="imageScaleOutput"></output><input id="imageScale" type="range" min="0.4" max="2.2" step="0.02"></label>
-          <label class="range-field">Escala dos textos <output id="labelScaleOutput"></output><input id="labelScale" type="range" min="0.5" max="1.8" step="0.02"></label>
-          <div class="divider"></div>
-          <div class="section-title"><span>Itens e imagens</span></div>
-          <div id="barItems" class="bar-items"></div>
-        </section>
-
-        <section class="tab-panel" data-panel="model">
-          <div class="section-title"><span>Modelo 3D</span><span id="modelFormatPill" class="pill">VAZIO</span></div>
-          <label class="upload-drop" for="modelInput"><strong>Importar GLB ou OBJ</strong><span>GLB mantém animações incorporadas</span></label>
+        <section class="tab-panel active" data-panel="model">
+          <div class="section-title"><span>Modelo 3D principal</span><span id="modelFormatPill" class="pill">VAZIO</span></div>
+          <label class="upload-drop model-upload-drop" for="modelInput"><strong>IMPORTAR GLB OU OBJ</strong><span>GLB: materiais, texturas e animações · limite 48 MB</span></label>
           <input id="modelInput" type="file" accept=".glb,.obj,model/gltf-binary,text/plain" hidden>
           <div id="modelFileName" class="file-status">Nenhum modelo carregado</div>
+          <div class="model-import-rule">Ao importar: <b>modelo visível</b> · <b>gráfico nativo oculto</b> · <b>todas as animações iniciadas juntas</b>.</div>
           <label class="switch-row"><input id="modelVisible" type="checkbox"><span>Exibir modelo</span></label>
 
           <label class="range-field">Posição X <output id="modelXOutput"></output><input id="modelX" type="range" min="-12" max="12" step="0.01"></label>
@@ -183,13 +153,43 @@
           <label class="range-field">Escala <output id="modelScaleOutput"></output><input id="modelScale" type="range" min="0.02" max="6" step="0.01"></label>
 
           <div class="divider"></div>
-          <div class="section-title"><span>Animação GLB</span><span id="animationCount" class="pill">0 CLIPES</span></div>
-          <label class="field">Clipe<select id="modelAnimationClip"></select></label>
-          <label class="switch-row"><input id="modelAnimationPlay" type="checkbox"><span>Reproduzir animação</span></label>
-          <label class="switch-row"><input id="modelAnimationLoop" type="checkbox"><span>Repetir em loop</span></label>
-          <label class="range-field">Velocidade <output id="modelAnimationSpeedOutput"></output><input id="modelAnimationSpeed" type="range" min="0.1" max="3" step="0.05"></label>
+          <div class="section-title"><span>Animações do GLB</span><span id="animationCount" class="pill">0 CLIPES</span></div>
+          <div id="animationList" class="animation-list"><span>Nenhuma animação detectada.</span></div>
+          <label class="switch-row"><input id="modelAnimationPlay" type="checkbox"><span>Reproduzir todas as animações</span></label>
+          <label class="switch-row"><input id="modelAnimationLoop" type="checkbox"><span>Repetir cada clipe respeitando sua duração</span></label>
+          <label class="range-field">Velocidade global <output id="modelAnimationSpeedOutput"></output><input id="modelAnimationSpeed" type="range" min="0.1" max="3" step="0.05"></label>
+          <button id="restartAnimationsButton" class="button secondary full" type="button">Reiniciar todas no tempo zero</button>
           <button id="removeModelButton" class="button danger full" type="button">Remover modelo</button>
-          <p class="helper">OBJ é geometria estática e não transporta animações. Para animações, materiais e texturas incorporadas, use GLB.</p>
+          <p class="helper">Os clipes não são separados em camadas. Todos usam o mesmo relógio global, mas preservam os keyframes e a duração definidos no GLB.</p>
+        </section>
+
+        <section class="tab-panel" data-panel="camera">
+          <div class="section-title"><span>Preset selecionado</span><span id="selectedCameraPill" class="pill">CAM 1</span></div>
+          <label class="field">Nome<input id="cameraName" type="text"></label>
+          <label class="range-field camera-range">Yaw <output id="cameraYawOutput"></output><input id="cameraYaw" type="range" min="-360" max="360" step="0.1"></label>
+          <label class="range-field camera-range">Pitch <output id="cameraPitchOutput"></output><input id="cameraPitch" type="range" min="-89" max="89" step="0.1"></label>
+          <label class="range-field camera-range">Distância <output id="cameraDistanceOutput"></output><input id="cameraDistance" type="range" min="2" max="60" step="0.01"></label>
+          <label class="range-field camera-range">FOV <output id="cameraFovOutput"></output><input id="cameraFov" type="range" min="15" max="100" step="0.1"></label>
+          <label class="range-field camera-range">Alvo X <output id="targetXOutput"></output><input id="targetX" type="range" min="-20" max="20" step="0.01"></label>
+          <label class="range-field camera-range">Alvo Y <output id="targetYOutput"></output><input id="targetY" type="range" min="-5" max="20" step="0.01"></label>
+          <label class="range-field camera-range">Alvo Z <output id="targetZOutput"></output><input id="targetZ" type="range" min="-20" max="20" step="0.01"></label>
+          <div class="camera-precision-grid">
+            <label>Yaw<input id="cameraYawNumber" type="number" step="0.1"></label>
+            <label>Pitch<input id="cameraPitchNumber" type="number" step="0.1"></label>
+            <label>Distância<input id="cameraDistanceNumber" type="number" step="0.01"></label>
+            <label>FOV<input id="cameraFovNumber" type="number" step="0.1"></label>
+          </div>
+          <div class="camera-link-box">
+            <div class="section-title"><span>Link real desta câmera</span><span class="pill ready">REAL</span></div>
+            <input id="selectedCameraUrl" type="text" readonly>
+            <div class="button-row"><button id="copySelectedCameraUrl" class="button primary" type="button">Copiar link</button><button id="openSelectedCameraUrl" class="button secondary" type="button">Abrir câmera</button></div>
+          </div>
+          <div class="divider"></div>
+          <div class="section-title"><span>Guia de alinhamento</span></div>
+          <label class="upload-drop" for="guideInput"><strong>Adicionar frame da câmera</strong><span>Usado apenas na prévia</span></label>
+          <input id="guideInput" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+          <label class="range-field">Opacidade do guia <output id="guideOpacityOutput"></output><input id="guideOpacity" type="range" min="0" max="1" step="0.01"></label>
+          <button id="removeGuideButton" class="button secondary full" type="button">Remover guia</button>
         </section>
 
         <section class="tab-panel" data-panel="lights">
@@ -200,12 +200,59 @@
           <div class="divider"></div>
           <div class="section-title"><span>Pontos de luz</span><button id="addLightButton" class="button primary mini" type="button">+ Luz</button></div>
           <div id="lightList" class="light-list"></div>
-          <p class="helper">Os marcadores das luzes aparecem apenas na prévia. O overlay mostra somente o resultado da iluminação.</p>
+          <p class="helper">Os marcadores aparecem apenas na prévia. O overlay mostra somente a iluminação final.</p>
+        </section>
+
+        <section class="tab-panel" data-panel="sheets">
+          <div class="section-title"><span>Google Sheets</span><span id="sheetConnectionPill" class="pill">DESCONECTADO</span></div>
+          <p class="helper strong">A planilha precisa estar compartilhada como “qualquer pessoa com o link pode ver”. Não é necessário publicar CSV.</p>
+          <label class="field">Link da planilha<input id="sheetUrl" type="url" placeholder="https://docs.google.com/spreadsheets/d/..."></label>
+          <div class="form-grid two">
+            <label class="field">GID da aba<input id="sheetGid" type="text" inputmode="numeric" value="0"></label>
+            <label class="field">Atualizar a cada (s)<input id="sheetRefreshSeconds" type="number" min="3" max="3600" step="1"></label>
+          </div>
+          <label class="switch-row"><input id="sheetAutoRefresh" type="checkbox"><span>Atualização automática</span></label>
+          <div class="button-row">
+            <button id="connectSheetButton" class="button primary" type="button">Conectar e ler</button>
+            <button id="refreshSheetButton" class="button secondary" type="button">Atualizar agora</button>
+          </div>
+          <div id="sheetStatus" class="sheet-status">Nenhuma planilha conectada.</div>
+          <div class="sheet-meta"><span>Última leitura</span><b id="sheetLastUpdate">—</b></div>
+          <div class="divider"></div>
+          <div class="section-title"><span>Colunas reconhecidas</span><span class="pill">AUTOMÁTICO</span></div>
+          <div class="sheet-columns"><code>nome</code><code>valor</code><code>cor</code><code>imagem</code></div>
+          <p class="helper">Obrigatórias: <b>nome</b> e <b>valor</b>. Opcionais: <b>cor</b> em hexadecimal e <b>imagem</b> com URL HTTPS.</p>
+          <div id="sheetPreview" class="sheet-preview"></div>
+        </section>
+
+        <section class="tab-panel" data-panel="graph">
+          <div class="section-title"><span>Gráfico nativo opcional</span><span id="graphVisibilityPill" class="pill">VISÍVEL</span></div>
+          <label class="switch-row prominent-switch"><input id="generatedGraphVisible" type="checkbox"><span>Exibir base PNG, barras, textos e imagens</span></label>
+          <p class="helper">Este gráfico é ocultado automaticamente quando um GLB ou OBJ é importado. Os dados continuam sendo atualizados pelo Google Sheets.</p>
+          <div class="divider"></div>
+          <div class="section-title"><span>Base PNG extrudada</span></div>
+          <label class="upload-drop" for="baseInput"><strong>Carregar PNG transparente</strong><span>A silhueta vira uma base extrudada</span></label>
+          <input id="baseInput" type="file" accept="image/png" hidden>
+          <label class="range-field">Extrusão <output id="baseThicknessOutput"></output><input id="baseThickness" type="range" min="0.05" max="1.5" step="0.01"></label>
+          <label class="range-field">Tamanho <output id="baseScaleOutput"></output><input id="baseScale" type="range" min="3" max="18" step="0.1"></label>
+          <label class="range-field">Leitura do recorte <output id="alphaThresholdOutput"></output><input id="alphaThreshold" type="range" min="0.02" max="0.8" step="0.01"></label>
+          <label class="field color-field">Cor lateral<input id="baseColor" type="color"></label>
+          <div class="divider"></div>
+          <div class="section-title"><span>Barras</span></div>
+          <label class="range-field">Largura <output id="barWidthOutput"></output><input id="barWidth" type="range" min="0.2" max="2.2" step="0.02"></label>
+          <label class="range-field">Profundidade <output id="barDepthOutput"></output><input id="barDepth" type="range" min="0.2" max="2" step="0.02"></label>
+          <label class="range-field">Altura máxima <output id="barHeightOutput"></output><input id="barHeight" type="range" min="1" max="8" step="0.1"></label>
+          <label class="range-field">Espaçamento <output id="barGapOutput"></output><input id="barGap" type="range" min="0" max="2" step="0.02"></label>
+          <label class="range-field">Escala das imagens <output id="imageScaleOutput"></output><input id="imageScale" type="range" min="0.4" max="2.2" step="0.02"></label>
+          <label class="range-field">Escala dos textos <output id="labelScaleOutput"></output><input id="labelScale" type="range" min="0.5" max="1.8" step="0.02"></label>
+          <div class="divider"></div>
+          <div class="section-title"><span>Itens recebidos do Sheets</span></div>
+          <div id="barItems" class="bar-items"></div>
         </section>
 
         <section class="tab-panel" data-panel="streamdeck">
           <div class="section-title"><span>Links reais da sala</span><span class="pill ready">GET</span></div>
-          <p class="helper strong">Depois do deploy, os endereços abaixo usam automaticamente o domínio real do Worker. No Stream Deck, use a ação Website com “GET request in background”.</p>
+          <p class="helper strong">Os links usam o domínio atual do Worker, a sala selecionada e a chave de controle.</p>
           <button id="copyAllStreamDeckButton" class="button primary full" type="button">Copiar todos os links</button>
           <div id="streamDeckLinks" class="streamdeck-links"></div>
           <div class="divider"></div>
@@ -214,13 +261,25 @@
             <button id="copyProgramUrlButton" class="button secondary" type="button">Copiar link</button>
             <button id="openProgramUrlButton" class="button secondary" type="button">Abrir</button>
           </div>
-          <label class="field">Exibir/ocultar gráfico<input id="toggleEndpoint" type="text" readonly></label>
+          <label class="field">Exibir/ocultar cena<input id="toggleEndpoint" type="text" readonly></label>
           <button id="copyToggleEndpointButton" class="button secondary full" type="button">Copiar link de exibir/ocultar</button>
-          <p class="helper">O overlay dinâmico troca de perspectiva quando um dos links de corte é acionado. Os links fixos de câmera servem para conferir ou criar inputs separados.</p>
         </section>
       </aside>
     </main>
   </div>
-  <script type="module" src="/js/operator.js"></script>
+
+  <dialog id="cameraLinksDialog" class="links-dialog">
+    <div class="dialog-head">
+      <div><strong>Links reais das câmeras virtuais</strong><span>Câmeras fixas para vMix e cortes para Stream Deck.</span></div>
+      <button id="closeCameraLinksButton" class="icon-button" type="button" aria-label="Fechar">×</button>
+    </div>
+    <div id="cameraLinksDialogContent" class="camera-links-grid"></div>
+    <div class="dialog-footer">
+      <button id="copyAllCameraLinksDialogButton" class="button primary" type="button">Copiar todos os links</button>
+      <button id="goToStreamDeckButton" class="button secondary" type="button">Abrir painel de links</button>
+    </div>
+  </dialog>
+
+  <script type="module" src="/js/operator.js?v=0.4.0"></script>
 </body>
 </html>
