@@ -1,5 +1,5 @@
-import { BroadcastRenderer } from './renderer3d.js?v=0.6.0';
-import { api, connectSocket, getRoom } from './cloud.js?v=0.6.0';
+import { BroadcastRenderer } from './renderer3d.js?v=0.7.0';
+import { api, connectSocket, getRoom } from './cloud.js?v=0.7.0';
 
 const canvas = document.getElementById('programCanvas');
 const renderer = new BroadcastRenderer(canvas, { interactive: false });
@@ -15,7 +15,7 @@ let debugNode = null;
 function normalizeState(input) {
   const next = structuredClone(input || {});
   const previousVersion = Number(next.version || 0);
-  next.version = 6;
+  next.version = 7;
   next.activeCamera = Number(next.activeCamera || 1);
   next.outputVisible = next.outputVisible !== false;
   next.scene ||= {};
@@ -57,6 +57,18 @@ function showDebug(message, error = false) {
   debugNode.textContent = message;
   debugNode.dataset.error = error ? '1' : '0';
 }
+
+canvas.addEventListener('model-loading', event => {
+  const percent = Number(event.detail?.percent || 0);
+  showDebug(percent > 0 ? `Carregando GLB ${percent}%` : 'Abrindo GLB…');
+});
+canvas.addEventListener('model-ready', event => {
+  const detail = event.detail || {};
+  showDebug(`GLB OK · ${detail.stats?.meshes || 0} objetos · ${detail.animations || 0} animações`);
+});
+canvas.addEventListener('model-error', event => {
+  showDebug(`ERRO GLB: ${event.detail?.message || 'falha desconhecida'}`, true);
+});
 
 function apply(nextState) {
   state = normalizeState(nextState);

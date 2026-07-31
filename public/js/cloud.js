@@ -75,6 +75,49 @@ export function controlUrl(path, room = getRoom(), token = getToken()) {
   return url.toString();
 }
 
+
+function mediaContentType(file) {
+  const name = String(file?.name || '').toLowerCase();
+  if (file?.type) return file.type;
+  if (name.endsWith('.glb')) return 'model/gltf-binary';
+  if (name.endsWith('.gltf')) return 'model/gltf+json';
+  if (name.endsWith('.obj')) return 'text/plain; charset=utf-8';
+  if (name.endsWith('.png')) return 'image/png';
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
+  if (name.endsWith('.webp')) return 'image/webp';
+  return 'application/octet-stream';
+}
+
+export function uploadMedia(file, onProgress) {
+  if (!(file instanceof Blob)) return Promise.reject(new Error('Arquivo inválido.'));
+  const token = getToken();
+  const url = new URL('/api/media/upload', location.origin);
+  url.searchParams.set('room', getRoom());
+  url.searchParams.set('name', String(file.name || 'arquivo'));
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url.toString());
+    xhr.responseType = 'json';
+    xhr.setRequestHeader('content-type', mediaContentType(file));
+    xhr.setRequestHeader('x-file-size', String(file.size || 0));
+    if (token) xhr.setRequestHeader('authorization', `Bearer ${token}`);
+    xhr.upload.addEventListener('progress', event => {
+      if (event.lengthComputable) onProgress?.(event.loaded, event.total);
+    });
+    xhr.addEventListener('load', () => {
+      const payload = xhr.response && typeof xhr.response === 'object'
+        ? xhr.response
+        : (() => { try { return JSON.parse(xhr.responseText || '{}'); } catch { return {}; } })();
+      if (xhr.status >= 200 && xhr.status < 300 && payload?.url) resolve(payload);
+      else reject(new Error(payload?.error || `Falha no upload (${xhr.status || 0}).`));
+    });
+    xhr.addEventListener('error', () => reject(new Error('Falha de rede durante o upload.')));
+    xhr.addEventListener('abort', () => reject(new Error('Upload cancelado.')));
+    xhr.send(file);
+  });
+}
+
 export async function api(path, options = {}) {
   const token = getToken();
   const headers = new Headers(options.headers || {});

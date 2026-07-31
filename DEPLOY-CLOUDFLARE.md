@@ -1,35 +1,47 @@
-# Deploy correto — GitHub + Cloudflare Worker
+# Deploy correto — GitHub + Cloudflare Worker + R2
 
-## Não usar Direct Upload de Pages
+## 1. Criar o bucket R2 uma única vez
 
-O projeto não é apenas um site estático. Ele depende do Worker e do Durable Object. Publicar somente a pasta `public` faz a interface abrir, mas quebra:
-
-- `/api/state`;
-- `/api/sheets/sync`;
-- `/overlay`;
-- `/camera/1` a `/camera/4`;
-- WebSocket;
-- links do Stream Deck.
-
-## Deploy pelo terminal
+Pelo terminal:
 
 ```bash
 npm install
 npx wrangler login
+npx wrangler r2 bucket create broadcast3d-media
+```
+
+Também é possível criar no Dashboard:
+
+```text
+R2 Object Storage → Create bucket → broadcast3d-media
+```
+
+## 2. Publicar o Worker
+
+```bash
 npm run check
 npm run deploy
 ```
 
-## Deploy automático pelo GitHub
+O Worker utiliza:
 
-No Cloudflare, conecte o repositório em **Workers & Pages → Workers Builds**.
+- Static Assets;
+- Durable Object para estado e WebSocket;
+- R2 para GLB, OBJ, PNG e imagens;
+- proxy para Google Sheets.
+
+Não publique apenas a pasta `public` como Pages.
+
+## 3. Deploy automático pelo GitHub
+
+Conecte o repositório em **Workers & Pages → Workers Builds**.
 
 ```text
 Build command: npm run check
 Deploy command: npm run deploy
 ```
 
-O Cloudflare instala as dependências antes do build.
+O bucket R2 precisa existir antes do primeiro deploy automático.
 
 Secret opcional:
 
@@ -37,7 +49,7 @@ Secret opcional:
 CONTROL_TOKEN
 ```
 
-## Testes após publicar
+## 4. Testes
 
 Abra:
 
@@ -45,16 +57,18 @@ Abra:
 https://SEU-WORKER.workers.dev/api/health
 ```
 
-A resposta deve conter:
+Resposta esperada:
 
 ```json
-{"ok":true,"version":"0.6.0"}
+{
+  "ok": true,
+  "version": "0.7.0",
+  "mediaBucket": true
+}
 ```
 
-Depois abra:
+Depois teste:
 
 ```text
 https://SEU-WORKER.workers.dev/overlay?room=studio&preview=1&debug=1
 ```
-
-O canto inferior deve mostrar `Overlay OK`.

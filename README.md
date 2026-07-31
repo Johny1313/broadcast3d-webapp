@@ -1,27 +1,72 @@
-# Broadcast3D Cloud v0.6.0
+# Broadcast3D Cloud v0.7.0
 
-Webapp de overlay 3D transparente para vMix, com GLB/OBJ, gráfico criado por Google Sheets, quatro câmeras virtuais e operação por Stream Deck.
+Webapp de overlay 3D transparente para vMix, com modelos GLB/OBJ, gráfico criado por Google Sheets, quatro câmeras virtuais, PLAY único e operação por Stream Deck.
 
-## Correções desta versão
+## Correção principal: GLB SP05
 
-- O link do overlay agora usa a rota direta `/overlay`, sem redirecionamento.
-- Existe um link separado de teste: `/overlay?room=studio&preview=1&debug=1`.
-- O teste mostra a cena final e informa sala, câmera e quantidade de itens carregados.
-- A importação do Google Sheets agora acontece no Worker e salva o gráfico na sala antes de atualizar o overlay.
-- O parser aceita CSV separado por vírgula, ponto e vírgula ou tabulação.
-- Há fallback entre os endpoints `export`, `gviz` e `pub` do Google Sheets.
-- A planilha pode usar `nome` e `valor`; quando esses títulos não existem, o app tenta identificar automaticamente a coluna de texto e a coluna numérica.
-- A prévia do operador mostra o resultado final imediatamente. O overlay LIVE continua transparente até o comando PLAY.
+O `SP05.glb` tem cerca de 32 MB, 16 malhas, aproximadamente 607 mil vértices, 18 animações e dois PNGs RGBA incorporados.
 
-## Fluxo correto
+A versão anterior enviava o arquivo convertido em Base64 dentro de JSON e tentava guardar blocos grandes no Durable Object. Essa mecânica não era adequada para um GLB desse tamanho.
 
-1. Cole o link público do Google Sheets.
-2. Clique em **Conectar**.
-3. Confirme a mensagem `Gráfico criado a partir do Google Sheets`.
-4. Abra **Links reais**.
-5. Use **Testar backend + abrir overlay**.
-6. Adicione o link **Overlay LIVE** ao Browser Input do vMix.
-7. Use **Preparar** e depois **PLAY**.
+A v0.7.0 muda o fluxo:
+
+```text
+Navegador
+  └── upload binário direto
+        └── Cloudflare Worker
+              └── Cloudflare R2
+                    └── overlay e painel carregam o mesmo GLB
+```
+
+Implementado:
+
+- upload binário sem Base64;
+- armazenamento dos modelos e imagens no Cloudflare R2;
+- progresso real de upload;
+- carregamento progressivo do GLB;
+- cálculo de centralização usando o último frame da animação;
+- suporte a cenas que começam com objetos em escala zero;
+- preservação dos materiais e PNGs transparentes do GLB;
+- todas as animações começam no PLAY;
+- cada animação para no próprio último frame;
+- os objetos permanecem visíveis após o término;
+- mensagens claras de erro no painel e no overlay de diagnóstico.
+
+## Pré-requisito obrigatório: bucket R2
+
+Crie uma vez o bucket:
+
+```bash
+npx wrangler login
+npx wrangler r2 bucket create broadcast3d-media
+```
+
+Ou use:
+
+```text
+criar-bucket-r2.bat
+```
+
+O arquivo `wrangler.jsonc` já contém o binding:
+
+```json
+{
+  "binding": "MEDIA_BUCKET",
+  "bucket_name": "broadcast3d-media"
+}
+```
+
+Sem o bucket, o painel abrirá, mas o upload de GLB retornará uma mensagem informando que `MEDIA_BUCKET` não está configurado.
+
+## Fluxo operacional
+
+1. Importe o GLB ou OBJ.
+2. Aguarde `Modelo carregado e pronto para PLAY`.
+3. Conecte a planilha pública do Google Sheets, quando houver gráfico adicional.
+4. Ajuste luzes e câmeras virtuais.
+5. Clique em **Preparar**.
+6. Clique em **PLAY**.
+7. No vMix, use o link LIVE como Browser Input/Overlay.
 
 ## Google Sheets
 
@@ -35,13 +80,6 @@ Candidato A,42,#3567d7,https://exemplo.com/a.png
 Candidato B,35,#e34f59,https://exemplo.com/b.png
 ```
 
-Campos:
-
-- `nome`: texto da barra;
-- `valor`: altura da barra;
-- `cor`: hexadecimal opcional;
-- `imagem`: URL HTTPS pública opcional.
-
 ## URLs depois do deploy
 
 ```text
@@ -51,7 +89,7 @@ https://SEU-WORKER.workers.dev/?room=studio
 Overlay LIVE para vMix:
 https://SEU-WORKER.workers.dev/overlay?room=studio
 
-Teste visual do overlay:
+Teste visual com diagnóstico:
 https://SEU-WORKER.workers.dev/overlay?room=studio&preview=1&debug=1
 
 Câmeras virtuais fixas:
@@ -66,18 +104,6 @@ https://SEU-WORKER.workers.dev/play?room=studio&token=SUA_CHAVE
 Preparar:
 https://SEU-WORKER.workers.dev/reset?room=studio&token=SUA_CHAVE
 ```
-
-## Importante sobre o Cloudflare
-
-Este projeto precisa ser publicado como **Cloudflare Worker**, porque usa:
-
-- Worker API;
-- Durable Object;
-- WebSocket;
-- armazenamento da sala;
-- proxy do Google Sheets.
-
-Não publique apenas a pasta `public` como Cloudflare Pages ou site estático. Nesse modo a interface abre, mas os links, o estado e o Google Sheets não funcionam.
 
 ## Desenvolvimento
 
@@ -94,3 +120,5 @@ Deploy:
 ```bash
 npm run deploy
 ```
+
+O projeto deve ser publicado como **Cloudflare Worker**, não como site estático no Pages.

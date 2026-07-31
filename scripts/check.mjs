@@ -17,24 +17,24 @@ for (const file of ['src/index.js','public/js/operator.js','public/js/program.js
 const worker = await readFile(new URL('../src/index.js', import.meta.url), 'utf8');
 for (const required of [
   'BroadcastRoom', '/api/state', '/api/ws', '/api/upload', '/api/sheets', '/api/sheets/sync',
-  '/api/overlay-check', "version: '0.6.0'", 'state.version = 6', "playback.mode = 'playing'",
+  '/api/overlay-check', '/api/media/upload', 'MEDIA_BUCKET', "version: '0.7.0'", 'state.version = 7', "playback.mode = 'playing'",
   "playback.mode = 'prepared'", 'googleSheetCandidates', 'detectDelimiter'
 ]) if (!worker.includes(required)) throw new Error(`Implementação ausente no Worker: ${required}`);
 
 const renderer = await readFile(new URL('../public/js/renderer3d.js', import.meta.url), 'utf8');
-for (const required of ['GLTFLoader','LoopOnce','clampWhenFinished = true','applyGraphAnimation','Number.POSITIVE_INFINITY','action.paused = finished']) {
+for (const required of ['GLTFLoader','LoopOnce','clampWhenFinished = true','applyGraphAnimation','Number.POSITIVE_INFINITY','action.paused = finished','model-loading','model-ready','setFromObject(root, true)']) {
   if (!renderer.includes(required)) throw new Error(`Renderer incompleto: ${required}`);
 }
 
 const operator = await readFile(new URL('../public/js/operator.js', import.meta.url), 'utf8');
-for (const required of ["api('/api/sheets/sync'", 'programPreviewUrl', '/api/overlay-check', 'Backend não encontrado']) {
+for (const required of ["api('/api/sheets/sync'", 'programPreviewUrl', '/api/overlay-check', 'Backend não encontrado', 'uploadMedia']) {
   if (!operator.includes(required)) throw new Error(`Operador incompleto: ${required}`);
 }
 
 const cloud = await readFile(new URL('../public/js/cloud.js', import.meta.url), 'utf8');
-if (!cloud.includes("new URL('/overlay'")) throw new Error('Link de overlay não usa a rota /overlay.');
+if (!cloud.includes("new URL('/overlay'") || !cloud.includes('XMLHttpRequest') || !cloud.includes('/api/media/upload')) throw new Error('Link de overlay não usa a rota /overlay.');
 
 const wrangler = await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
-for (const route of ['/api/*','/camera/*','/cut/*','/play','/reset','/overlay']) if (!wrangler.includes(route)) throw new Error(`Rota ausente: ${route}`);
+for (const route of ['/api/*','/camera/*','/cut/*','/play','/reset','/overlay','MEDIA_BUCKET','broadcast3d-media']) if (!wrangler.includes(route)) throw new Error(`Rota ausente: ${route}`);
 
-console.log('Broadcast3D v0.6.0 validado: overlay direto, diagnóstico, Google Sheets persistido e PLAY sincronizado.');
+console.log('Broadcast3D v0.7.0 validado: upload binário no R2, GLB grande, transparência, overlay e PLAY sincronizado.');

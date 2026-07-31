@@ -219,6 +219,7 @@ export class BroadcastRenderer {
     this.modelToken = 0;
     this.currentModelUrl = '';
     this.modelAnimations = [];
+    this.modelStats = { nodes: 0, meshes: 0, transparentMaterials: 0 };
     this.mixer = null;
     this.activeActions = [];
     this.modelDuration = 0;
@@ -328,7 +329,8 @@ export class BroadcastRenderer {
       detail: {
         name: this.state.scene.model.name || '',
         format: this.state.scene.model.format || '',
-        animations: this.modelAnimations.map((clip, index) => ({ name: clip.name || `Animação ${index + 1}`, duration: Number(clip.duration || 0) }))
+        animations: this.modelAnimations.map((clip, index) => ({ name: clip.name || `Animação ${index + 1}`, duration: Number(clip.duration || 0) })),
+        stats: { ...this.modelStats }
       }
     }));
   }
@@ -557,6 +559,7 @@ export class BroadcastRenderer {
     this.modelDuration = 0;
     this.mixer = null;
     this.modelAnimations = [];
+    this.modelStats = { nodes: 0, meshes: 0, transparentMaterials: 0 };
     disposeGroup(this.modelPivot);
     this.dispatchModelInfo();
   }
@@ -568,24 +571,43 @@ export class BroadcastRenderer {
     this.clearModel();
     if (!model.url) return;
 
+    this.canvas.dispatchEvent(new CustomEvent('model-loading', {
+      detail: { name: model.name || 'modelo', loaded: 0, total: 0, percent: 0 }
+    }));
+
     try {
       let root;
       let animations = [];
       const format = String(model.format || '').toLowerCase();
+      const onProgress = event => {
+        const loaded = Number(event?.loaded || 0);
+        const total = Number(event?.total || 0);
+        const percent = total > 0 ? Math.min(100, Math.round(loaded / total * 100)) : 0;
+        this.canvas.dispatchEvent(new CustomEvent('model-loading', {
+          detail: { name: model.name || 'modelo', loaded, total, percent }
+        }));
+      };
+
       if (format === 'obj') {
         const response = await fetch(model.url);
         if (!response.ok) throw new Error(`Falha ao abrir OBJ (${response.status})`);
-        root = this.objLoader.parse(await response.text());
+        const text = await response.text();
+        onProgress({ loaded: text.length, total: text.length });
+        root = this.objLoader.parse(text);
       } else {
-        const gltf = await this.gltfLoader.loadAsync(model.url);
+        const gltf = await this.gltfLoader.loadAsync(model.url, onProgress);
         root = gltf.scene || gltf.scenes?.[0];
         animations = Array.isArray(gltf.animations) ? gltf.animations : [];
       }
       if (token !== this.modelToken || !root) return;
 
+      let nodes = 0;
+      let meshes = 0;
+      let transparentMaterials = 0;
       root.traverse(object => {
+        nodes += 1;
         if (!object.isMesh) return;
-        object.castShadow = true;
+        meshes += 1;
         object.receiveShadow = true;
         if (format === 'obj') {
           const source = Array.isArray(object.material) ? object.material[0] : object.material;
@@ -595,11 +617,40 @@ export class BroadcastRenderer {
             metalness: 0.06,
             side: THREE.DoubleSide
           });
+          object.castShadow = true;
+          return;
         }
+
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        let meshHasBlend = false;
+        for (const material of materials) {
+          if (!material) continue;
+          const hasTransparency = Boolean(material.transparent || material.opacity < 0.999 || material.alphaTest > 0);
+          if (hasTransparency) {
+            transparentMaterials += 1;
+            meshHasBlend = true;
+            material.transparent = true;
+            material.depthWrite = material.alphaTest > 0.001;
+          }
+          material.needsUpdate = true;
+        }
+        // Evita sombras retangulares em planos PNG com alpha BLEND.
+        object.castShadow = !meshHasBlend;
       });
 
+      this.modelPivot.add(root);
+      this.modelAnimations = animations;
+      this.modelDuration = animations.reduce((maximum, clip) => Math.max(maximum, Number(clip.duration || 0)), 0);
+      if (animations.length) {
+        this.mixer = new THREE.AnimationMixer(root);
+        this.prepareModelActions();
+        // O SP05 começa com os objetos em escala zero. Calculamos o enquadramento
+        // usando a pose final, e depois retornamos ao frame inicial.
+        this.applyModelAnimationAtTime(this.modelDuration + 0.001);
+      }
+
       root.updateMatrixWorld(true);
-      const box = new THREE.Box3().setFromObject(root);
+      const box = new THREE.Box3().setFromObject(root, true);
       if (!box.isEmpty()) {
         const center = box.getCenter(new THREE.Vector3());
         root.position.x -= center.x;
@@ -607,13 +658,19 @@ export class BroadcastRenderer {
         root.position.y -= box.min.y;
       }
 
-      this.modelPivot.add(root);
-      this.modelAnimations = animations;
-      this.modelDuration = animations.reduce((maximum, clip) => Math.max(maximum, Number(clip.duration || 0)), 0);
-      if (animations.length) this.mixer = new THREE.AnimationMixer(root);
+      this.modelStats = { nodes, meshes, transparentMaterials };
+      this.prepareModelActions();
       this.dispatchModelInfo();
       this.applyModelSettings();
       this.applyPlaybackState(true);
+      this.canvas.dispatchEvent(new CustomEvent('model-ready', {
+        detail: {
+          name: model.name || 'modelo',
+          animations: animations.length,
+          duration: this.modelDuration,
+          stats: { ...this.modelStats }
+        }
+      }));
     } catch (error) {
       console.error(error);
       this.canvas.dispatchEvent(new CustomEvent('model-error', { detail: { message: error.message || 'Falha ao carregar o modelo.' } }));

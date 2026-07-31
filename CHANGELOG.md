@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0
+
+- Corrigido o upload de GLBs grandes, incluindo `SP05.glb`.
+- Upload deixou de usar Base64/JSON e passou a enviar binário diretamente.
+- Arquivos de mídia agora são armazenados no Cloudflare R2.
+- Adicionado progresso real de upload e carregamento.
+- Centralização do modelo passa a usar a pose final das animações.
+- Preservados materiais e PNGs transparentes incorporados ao GLB.
+- Planos transparentes não geram mais sombras retangulares.
+- Mensagens de diagnóstico foram adicionadas ao painel e ao overlay de teste.
+- Limite do estado do Durable Object corrigido para permanecer abaixo do limite por valor.
+
 ## 0.6.0
 
 - Corrigida a rota do overlay para responder diretamente em `/overlay`.

@@ -1,5 +1,5 @@
-import { BroadcastRenderer } from './renderer3d.js?v=0.6.0';
-import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programPreviewUrl, programUrl, setConnection } from './cloud.js?v=0.6.0';
+import { BroadcastRenderer } from './renderer3d.js?v=0.7.0';
+import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programPreviewUrl, programUrl, setConnection, uploadMedia } from './cloud.js?v=0.7.0';
 
 const $ = id => document.getElementById(id);
 const DEG = Math.PI / 180;
@@ -31,7 +31,7 @@ function defaultLight(index = 1) {
 function normalizeState(input) {
   const next = structuredClone(input || {});
   const previousVersion = Number(next.version || 0);
-  next.version = 6;
+  next.version = 7;
   next.projectName ||= 'Projeto 3D - Eleições';
   next.activeCamera = Number(next.activeCamera || 1);
   next.selectedCamera = Number(next.selectedCamera || next.activeCamera || 1);
@@ -531,19 +531,22 @@ function renderAll() {
   updateCloudLinks();
 }
 
-async function uploadFile(file) {
+async function validateModelFile(file, extension) {
+  if (extension !== 'glb') return;
+  if (file.size < 20) throw new Error('GLB inválido ou incompleto.');
+  const header = new DataView(await file.slice(0, 12).arrayBuffer());
+  const magic = header.getUint32(0, true);
+  const version = header.getUint32(4, true);
+  const declaredLength = header.getUint32(8, true);
+  if (magic !== 0x46546c67) throw new Error('O arquivo não possui um cabeçalho GLB válido.');
+  if (version !== 2) throw new Error(`GLB versão ${version} não suportado. Use GLB 2.0.`);
+  if (declaredLength !== file.size) throw new Error('O GLB está truncado ou possui tamanho interno incorreto.');
+}
+
+async function uploadFile(file, onProgress) {
   const maxBytes = 48 * 1024 * 1024;
   if (file.size > maxBytes) throw new Error('Arquivo maior que 48 MB. Otimize o modelo antes do upload.');
-  const dataUrl = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result || '');
-      resolve(result.startsWith('data:;base64,') ? result.replace('data:;base64,', 'data:application/octet-stream;base64,') : result);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-  const result = await api('/api/upload', { method: 'POST', body: JSON.stringify({ name: file.name, dataUrl }) });
+  const result = await uploadMedia(file, onProgress);
   return result.url;
 }
 
@@ -677,8 +680,13 @@ function bindUploads() {
     const extension = file.name.split('.').pop().toLowerCase();
     if (!['glb', 'obj'].includes(extension)) return showToast('Use um arquivo GLB ou OBJ.');
     try {
+      await validateModelFile(file, extension);
       showToast(`Enviando ${file.name}…`);
-      state.scene.model.url = await uploadFile(file);
+      const statusNode = $('modelQuickStatus');
+      state.scene.model.url = await uploadFile(file, (loaded, total) => {
+        const percent = total > 0 ? Math.min(100, Math.round(loaded / total * 100)) : 0;
+        if (statusNode) statusNode.textContent = `Upload ${percent}% · ${file.name}`;
+      });
       state.scene.model.name = file.name;
       state.scene.model.format = extension;
       state.scene.model.visible = true;
@@ -960,7 +968,21 @@ async function init() {
     renderModelControls();
     renderPlaybackControls();
   });
-  $('previewCanvas').addEventListener('model-error', event => showToast(event.detail.message));
+  $('previewCanvas').addEventListener('model-loading', event => {
+    const percent = Number(event.detail?.percent || 0);
+    const name = event.detail?.name || 'modelo';
+    if ($('modelQuickStatus')) $('modelQuickStatus').textContent = percent > 0 ? `Carregando ${percent}% · ${name}` : `Abrindo ${name}…`;
+  });
+  $('previewCanvas').addEventListener('model-ready', event => {
+    const detail = event.detail || {};
+    const stats = detail.stats || {};
+    if ($('modelQuickStatus')) $('modelQuickStatus').textContent = `${detail.name || 'Modelo'} · ${stats.meshes || 0} objetos · ${detail.animations || 0} animações`;
+    showToast(`${detail.name || 'GLB'} carregado e pronto para PLAY`);
+  });
+  $('previewCanvas').addEventListener('model-error', event => {
+    if ($('modelQuickStatus')) $('modelQuickStatus').textContent = `ERRO · ${event.detail.message}`;
+    showToast(event.detail.message);
+  });
   bindTabs();
   bindSceneInputs();
   bindCameraControls();

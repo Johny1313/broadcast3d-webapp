@@ -1,8 +1,8 @@
 import { DurableObject } from 'cloudflare:workers';
 
-const MAX_STATE_BYTES = 1_800_000;
+const MAX_STATE_BYTES = 100 * 1024;
 const MAX_MEDIA_BYTES = 48 * 1024 * 1024;
-const MEDIA_CHUNK_BYTES = 1_250_000;
+const MEDIA_CHUNK_BYTES = 96 * 1024;
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -17,7 +17,7 @@ function json(data, status = 200, extraHeaders = {}) {
 
 function defaultState() {
   return {
-    version: 6,
+    version: 7,
     projectName: 'Projeto 3D - Eleições',
     activeCamera: 1,
     selectedCamera: 1,
@@ -85,7 +85,7 @@ function normalizeState(input) {
   const defaults = defaultState();
   const state = structuredClone(input && typeof input === 'object' ? input : defaults);
   const previousVersion = Number(state.version || 0);
-  state.version = 6;
+  state.version = 7;
   state.projectName ||= defaults.projectName;
   state.activeCamera = Number(state.activeCamera || 1);
   state.selectedCamera = Number(state.selectedCamera || state.activeCamera || 1);
@@ -312,6 +312,38 @@ function routeToRoom(request, env, room) {
   return stub.fetch(request);
 }
 
+function safeMediaExtension(name, contentType = '') {
+  const match = String(name || '').toLowerCase().match(/\.([a-z0-9]{1,8})$/);
+  const extension = match ? `.${match[1]}` : '';
+  const allowed = new Set(['.glb', '.gltf', '.obj', '.png', '.jpg', '.jpeg', '.webp']);
+  if (allowed.has(extension)) return extension;
+  const type = String(contentType || '').toLowerCase();
+  if (type.includes('model/gltf-binary')) return '.glb';
+  if (type.includes('model/gltf+json')) return '.gltf';
+  if (type.includes('image/png')) return '.png';
+  if (type.includes('image/jpeg')) return '.jpg';
+  if (type.includes('image/webp')) return '.webp';
+  if (type.includes('text/plain')) return '.obj';
+  return '.bin';
+}
+
+function mediaContentType(extension, fallback = '') {
+  const known = {
+    '.glb': 'model/gltf-binary',
+    '.gltf': 'model/gltf+json',
+    '.obj': 'text/plain; charset=utf-8',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp'
+  };
+  return known[extension] || fallback || 'application/octet-stream';
+}
+
+function mediaObjectKey(room, assetId, extension) {
+  return `${room}/${assetId}${extension}`;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -320,13 +352,80 @@ export default {
       return json({
         ok: true,
         service: 'broadcast3d-cloudflare',
-        version: '0.6.0',
+        version: '0.7.0',
         realtime: 'durable-object-websocket',
-        storage: 'durable-object-sqlite',
+        storage: 'durable-object-sqlite + r2',
+        mediaBucket: Boolean(env.MEDIA_BUCKET),
         authRequired: Boolean(String(env.CONTROL_TOKEN || '').trim())
       });
     }
 
+
+    if (url.pathname === '/api/media/upload' && request.method === 'POST') {
+      const room = sanitizeRoom(url.searchParams.get('room') || 'studio');
+      if (!room) return json({ ok: false, error: 'Sala inválida.' }, 400);
+      if (!canWrite(request, env)) return json({ ok: false, error: 'Chave de controle inválida.' }, 401);
+      if (!env.MEDIA_BUCKET) {
+        return json({ ok: false, error: 'Bucket R2 MEDIA_BUCKET não configurado. Crie o bucket broadcast3d-media e publique novamente.' }, 503);
+      }
+      const fileSize = Number(request.headers.get('x-file-size') || request.headers.get('content-length') || 0);
+      if (!Number.isFinite(fileSize) || fileSize <= 0) return json({ ok: false, error: 'Arquivo vazio ou tamanho não informado.' }, 400);
+      if (fileSize > MAX_MEDIA_BYTES) return json({ ok: false, error: 'Arquivo maior que 48 MB.' }, 413);
+      if (!request.body) return json({ ok: false, error: 'Corpo do arquivo ausente.' }, 400);
+
+      const originalName = String(url.searchParams.get('name') || 'arquivo').slice(0, 180);
+      const incomingType = String(request.headers.get('content-type') || '').split(';')[0].trim();
+      const extension = safeMediaExtension(originalName, incomingType);
+      const assetId = crypto.randomUUID();
+      const key = mediaObjectKey(room, assetId, extension);
+      const contentType = mediaContentType(extension, incomingType);
+
+      try {
+        await env.MEDIA_BUCKET.put(key, request.body, {
+          httpMetadata: { contentType },
+          customMetadata: { originalName, room, uploadedAt: new Date().toISOString() }
+        });
+        return json({
+          ok: true,
+          id: assetId,
+          size: fileSize,
+          type: contentType,
+          url: `/api/media/${assetId}${extension}?room=${encodeURIComponent(room)}`
+        });
+      } catch (error) {
+        return json({ ok: false, error: `Falha ao gravar no R2: ${error.message || error}` }, 500);
+      }
+    }
+
+    const r2MediaMatch = url.pathname.match(/^\/api\/media\/([a-f0-9-]{36})(\.[a-z0-9]{1,8})$/i);
+    if (r2MediaMatch && (request.method === 'GET' || request.method === 'HEAD' || request.method === 'DELETE')) {
+      const room = sanitizeRoom(url.searchParams.get('room') || 'studio');
+      if (!room) return new Response('Sala inválida.', { status: 400 });
+      if (!env.MEDIA_BUCKET) return new Response('Bucket R2 não configurado.', { status: 503 });
+      const assetId = r2MediaMatch[1];
+      const extension = r2MediaMatch[2].toLowerCase();
+      const key = mediaObjectKey(room, assetId, extension);
+
+      if (request.method === 'DELETE') {
+        if (!canWrite(request, env)) return json({ ok: false, error: 'Chave de controle inválida.' }, 401);
+        await env.MEDIA_BUCKET.delete(key);
+        return json({ ok: true, deleted: true });
+      }
+
+      const object = request.method === 'HEAD'
+        ? await env.MEDIA_BUCKET.head(key)
+        : await env.MEDIA_BUCKET.get(key);
+      if (!object) return new Response('Arquivo não encontrado.', { status: 404 });
+
+      const headers = new Headers();
+      object.writeHttpMetadata?.(headers);
+      headers.set('content-type', headers.get('content-type') || mediaContentType(extension));
+      headers.set('content-length', String(object.size));
+      headers.set('cache-control', 'public, max-age=31536000, immutable');
+      headers.set('etag', object.httpEtag || object.etag || assetId);
+      headers.set('x-content-type-options', 'nosniff');
+      return new Response(request.method === 'HEAD' ? null : object.body, { status: 200, headers });
+    }
 
     if (url.pathname === '/api/sheets' && request.method === 'GET') {
       try {
@@ -355,7 +454,7 @@ export default {
       try {
         const stateResponse = await routeToRoom(new Request(`${url.origin}/api/state?room=${encodeURIComponent(room)}`), env, room);
         const statePayload = await stateResponse.json();
-        return json({ ok: true, version: '0.6.0', room, hasState: Boolean(statePayload?.state), activeCamera: statePayload?.state?.activeCamera || 1, itemCount: statePayload?.state?.scene?.items?.length || 0 });
+        return json({ ok: true, version: '0.7.0', room, hasState: Boolean(statePayload?.state), activeCamera: statePayload?.state?.activeCamera || 1, itemCount: statePayload?.state?.scene?.items?.length || 0 });
       } catch (error) {
         return json({ ok: false, error: error.message || 'Falha ao validar overlay.' }, 500);
       }

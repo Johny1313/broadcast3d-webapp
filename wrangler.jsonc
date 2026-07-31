@@ -8,6 +8,12 @@
     "binding": "ASSETS",
     "run_worker_first": ["/api/*", "/camera/*", "/cut/*", "/play", "/reset", "/overlay", "/program"]
   },
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "broadcast3d-media"
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {
