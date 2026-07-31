@@ -1,109 +1,12 @@
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+
 const DEG = Math.PI / 180;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
-}
-
-function normalize(v) {
-  const length = Math.hypot(v[0], v[1], v[2]) || 1;
-  return [v[0] / length, v[1] / length, v[2] / length];
-}
-
-function subtract(a, b) {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-}
-
-function cross(a, b) {
-  return [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0]
-  ];
-}
-
-function mat4Identity() {
-  return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
-}
-
-function mat4Multiply(a, b) {
-  const out = new Float32Array(16);
-  const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
-  const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
-  const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
-  const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
-  let b0 = b[0], b1 = b[1], b2 = b[2], b3 = b[3];
-  out[0] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
-  out[1] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
-  out[2] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
-  out[3] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
-  b0 = b[4]; b1 = b[5]; b2 = b[6]; b3 = b[7];
-  out[4] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
-  out[5] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
-  out[6] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
-  out[7] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
-  b0 = b[8]; b1 = b[9]; b2 = b[10]; b3 = b[11];
-  out[8] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
-  out[9] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
-  out[10] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
-  out[11] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
-  b0 = b[12]; b1 = b[13]; b2 = b[14]; b3 = b[15];
-  out[12] = b0 * a00 + b1 * a10 + b2 * a20 + b3 * a30;
-  out[13] = b0 * a01 + b1 * a11 + b2 * a21 + b3 * a31;
-  out[14] = b0 * a02 + b1 * a12 + b2 * a22 + b3 * a32;
-  out[15] = b0 * a03 + b1 * a13 + b2 * a23 + b3 * a33;
-  return out;
-}
-
-function mat4Perspective(fovDeg, aspect, near, far) {
-  const f = 1 / Math.tan((fovDeg * DEG) / 2);
-  const nf = 1 / (near - far);
-  const out = new Float32Array(16);
-  out[0] = f / aspect;
-  out[5] = f;
-  out[10] = (far + near) * nf;
-  out[11] = -1;
-  out[14] = 2 * far * near * nf;
-  return out;
-}
-
-function mat4LookAt(eye, center, up = [0, 1, 0]) {
-  const z = normalize(subtract(eye, center));
-  const x = normalize(cross(up, z));
-  const y = cross(z, x);
-  const out = mat4Identity();
-  out[0] = x[0]; out[1] = y[0]; out[2] = z[0];
-  out[4] = x[1]; out[5] = y[1]; out[6] = z[1];
-  out[8] = x[2]; out[9] = y[2]; out[10] = z[2];
-  out[12] = -(x[0] * eye[0] + x[1] * eye[1] + x[2] * eye[2]);
-  out[13] = -(y[0] * eye[0] + y[1] * eye[1] + y[2] * eye[2]);
-  out[14] = -(z[0] * eye[0] + z[1] * eye[1] + z[2] * eye[2]);
-  return out;
-}
-
-function mat4Translation(x, y, z) {
-  const out = mat4Identity();
-  out[12] = x; out[13] = y; out[14] = z;
-  return out;
-}
-
-function mat4Scale(x, y, z) {
-  const out = mat4Identity();
-  out[0] = x; out[5] = y; out[10] = z;
-  return out;
-}
-
-function mat4RotationY(rad) {
-  const c = Math.cos(rad), s = Math.sin(rad);
-  return new Float32Array([c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]);
-}
-
-function transformPoint(matrix, point) {
-  const x = point[0], y = point[1], z = point[2];
-  return [
-    matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12],
-    matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13],
-    matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14]
-  ];
 }
 
 function cameraEye(camera) {
@@ -115,113 +18,6 @@ function cameraEye(camera) {
   ];
 }
 
-function colorToArray(hex, alpha = 1) {
-  const value = String(hex || '#ffffff').replace('#', '');
-  const normalized = value.length === 3 ? value.split('').map(char => char + char).join('') : value.padEnd(6, 'f').slice(0, 6);
-  return [
-    parseInt(normalized.slice(0, 2), 16) / 255,
-    parseInt(normalized.slice(2, 4), 16) / 255,
-    parseInt(normalized.slice(4, 6), 16) / 255,
-    alpha
-  ];
-}
-
-function compileShader(gl, type, source) {
-  const shader = gl.createShader(type);
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const info = gl.getShaderInfoLog(shader);
-    gl.deleteShader(shader);
-    throw new Error(`Falha no shader: ${info}`);
-  }
-  return shader;
-}
-
-function createProgram(gl, vertexSource, fragmentSource) {
-  const program = gl.createProgram();
-  gl.attachShader(program, compileShader(gl, gl.VERTEX_SHADER, vertexSource));
-  gl.attachShader(program, compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource));
-  gl.linkProgram(program);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
-  return program;
-}
-
-function pushFace(target, corners, normal, uvs, texMix = 0) {
-  const order = [0, 1, 2, 0, 2, 3];
-  for (const index of order) {
-    target.positions.push(...corners[index]);
-    target.normals.push(...normal);
-    target.uvs.push(...uvs[index]);
-    target.texMix.push(texMix);
-  }
-}
-
-function boxGeometry(width, height, depth) {
-  const x = width / 2, y = height / 2, z = depth / 2;
-  const data = { positions: [], normals: [], uvs: [], texMix: [] };
-  const uv = [[0, 0], [1, 0], [1, 1], [0, 1]];
-  pushFace(data, [[-x,-y,z],[x,-y,z],[x,y,z],[-x,y,z]], [0,0,1], uv, 0);
-  pushFace(data, [[x,-y,-z],[-x,-y,-z],[-x,y,-z],[x,y,-z]], [0,0,-1], uv, 0);
-  pushFace(data, [[x,-y,z],[x,-y,-z],[x,y,-z],[x,y,z]], [1,0,0], uv, 0);
-  pushFace(data, [[-x,-y,-z],[-x,-y,z],[-x,y,z],[-x,y,-z]], [-1,0,0], uv, 0);
-  pushFace(data, [[-x,y,z],[x,y,z],[x,y,-z],[-x,y,-z]], [0,1,0], uv, 0);
-  pushFace(data, [[-x,-y,-z],[x,-y,-z],[x,-y,z],[-x,-y,z]], [0,-1,0], uv, 0);
-  return data;
-}
-
-function planeGeometry(width, height) {
-  const x = width / 2, y = height / 2;
-  const data = { positions: [], normals: [], uvs: [], texMix: [] };
-  pushFace(data, [[-x,-y,0],[x,-y,0],[x,y,0],[-x,y,0]], [0,0,1], [[0,0],[1,0],[1,1],[0,1]], 1);
-  return data;
-}
-
-function createLabelCanvas(item, scale = 1) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 640;
-  canvas.height = 220;
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(5, 12, 24, 0.86)';
-  ctx.roundRect(18, 16, 604, 188, 30);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,.22)';
-  ctx.lineWidth = 4;
-  ctx.stroke();
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `700 ${Math.round(74 * scale)}px Arial, sans-serif`;
-  ctx.fillText(String(item.value), 320, 77);
-  ctx.fillStyle = '#dbe7fa';
-  ctx.font = `700 ${Math.round(40 * scale)}px Arial, sans-serif`;
-  const name = String(item.name || '').toUpperCase();
-  ctx.fillText(name.length > 22 ? `${name.slice(0, 21)}…` : name, 320, 155);
-  return canvas;
-}
-
-function createPlaceholderCanvas(item) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 384;
-  canvas.height = 384;
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, 384, 384);
-  ctx.beginPath();
-  ctx.arc(192, 192, 168, 0, Math.PI * 2);
-  ctx.fillStyle = item.color || '#3b82f6';
-  ctx.fill();
-  ctx.lineWidth = 16;
-  ctx.strokeStyle = 'rgba(255,255,255,.85)';
-  ctx.stroke();
-  ctx.fillStyle = '#fff';
-  ctx.font = '700 150px Arial, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(String(item.name || '?').trim().slice(0, 1).toUpperCase(), 192, 205);
-  return canvas;
-}
-
 function loadImage(url) {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -231,9 +27,77 @@ function loadImage(url) {
   });
 }
 
+function createLabelCanvas(item) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 768;
+  canvas.height = 250;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(5, 12, 24, 0.9)';
+  if (typeof ctx.roundRect === 'function') {
+    ctx.beginPath();
+    ctx.roundRect(18, 16, 732, 218, 30);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.28)';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+  } else {
+    ctx.fillRect(18, 16, 732, 218);
+  }
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 84px Arial, sans-serif';
+  ctx.fillText(String(item.value), 384, 86);
+  ctx.fillStyle = '#dbe7fa';
+  ctx.font = '700 44px Arial, sans-serif';
+  const name = String(item.name || '').toUpperCase();
+  ctx.fillText(name.length > 24 ? `${name.slice(0, 23)}…` : name, 384, 177);
+  return canvas;
+}
+
+function createPlaceholderCanvas(item) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 512, 512);
+  ctx.beginPath();
+  ctx.arc(256, 256, 224, 0, Math.PI * 2);
+  ctx.fillStyle = item.color || '#3b82f6';
+  ctx.fill();
+  ctx.lineWidth = 18;
+  ctx.strokeStyle = 'rgba(255,255,255,.9)';
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = '700 200px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(item.name || '?').trim().slice(0, 1).toUpperCase(), 256, 275);
+  return canvas;
+}
+
+function pushFace(target, corners, normal, uvs) {
+  const order = [0, 1, 2, 0, 2, 3];
+  for (const index of order) {
+    target.positions.push(...corners[index]);
+    target.normals.push(...normal);
+    target.uvs.push(...uvs[index]);
+  }
+}
+
+function bufferGeometry(data) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(data.normals, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(data.uvs, 2));
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
 async function baseGeometryFromImage(url, thickness, platformWidth, alphaThreshold) {
   const image = await loadImage(url);
-  const maxCells = 72;
+  const maxCells = 82;
   const ratio = image.width / image.height || 1;
   let widthCells = maxCells;
   let heightCells = Math.max(8, Math.round(maxCells / ratio));
@@ -241,6 +105,7 @@ async function baseGeometryFromImage(url, thickness, platformWidth, alphaThresho
     heightCells = maxCells;
     widthCells = Math.max(8, Math.round(maxCells * ratio));
   }
+
   const canvas = document.createElement('canvas');
   canvas.width = widthCells;
   canvas.height = heightCells;
@@ -250,50 +115,156 @@ async function baseGeometryFromImage(url, thickness, platformWidth, alphaThresho
   const pixels = ctx.getImageData(0, 0, widthCells, heightCells).data;
   const active = new Uint8Array(widthCells * heightCells);
   const threshold = clamp(alphaThreshold, 0, 1) * 255;
-  for (let y = 0; y < heightCells; y++) {
-    for (let x = 0; x < widthCells; x++) {
+
+  for (let y = 0; y < heightCells; y += 1) {
+    for (let x = 0; x < widthCells; x += 1) {
       active[y * widthCells + x] = pixels[(y * widthCells + x) * 4 + 3] > threshold ? 1 : 0;
     }
   }
+
   const cell = platformWidth / widthCells;
-  const depth = cell * heightCells;
-  const data = { positions: [], normals: [], uvs: [], texMix: [] };
+  const platformDepth = cell * heightCells;
+  const top = { positions: [], normals: [], uvs: [] };
+  const side = { positions: [], normals: [], uvs: [] };
   const isActive = (x, y) => x >= 0 && x < widthCells && y >= 0 && y < heightCells && active[y * widthCells + x] === 1;
-  for (let y = 0; y < heightCells; y++) {
-    for (let x = 0; x < widthCells; x++) {
+
+  for (let y = 0; y < heightCells; y += 1) {
+    for (let x = 0; x < widthCells; x += 1) {
       if (!isActive(x, y)) continue;
       const x0 = -platformWidth / 2 + x * cell;
       const x1 = x0 + cell;
-      const z1 = depth / 2 - y * cell;
+      const z1 = platformDepth / 2 - y * cell;
       const z0 = z1 - cell;
-      const u0 = x / widthCells, u1 = (x + 1) / widthCells;
-      const v1 = 1 - y / heightCells, v0 = 1 - (y + 1) / heightCells;
-      pushFace(data, [[x0,thickness,z0],[x1,thickness,z0],[x1,thickness,z1],[x0,thickness,z1]], [0,1,0], [[u0,v0],[u1,v0],[u1,v1],[u0,v1]], 1);
-      if (!isActive(x - 1, y)) pushFace(data, [[x0,0,z1],[x0,0,z0],[x0,thickness,z0],[x0,thickness,z1]], [-1,0,0], [[0,0],[1,0],[1,1],[0,1]], 0);
-      if (!isActive(x + 1, y)) pushFace(data, [[x1,0,z0],[x1,0,z1],[x1,thickness,z1],[x1,thickness,z0]], [1,0,0], [[0,0],[1,0],[1,1],[0,1]], 0);
-      if (!isActive(x, y - 1)) pushFace(data, [[x1,0,z1],[x0,0,z1],[x0,thickness,z1],[x1,thickness,z1]], [0,0,1], [[0,0],[1,0],[1,1],[0,1]], 0);
-      if (!isActive(x, y + 1)) pushFace(data, [[x0,0,z0],[x1,0,z0],[x1,thickness,z0],[x0,thickness,z0]], [0,0,-1], [[0,0],[1,0],[1,1],[0,1]], 0);
+      const u0 = x / widthCells;
+      const u1 = (x + 1) / widthCells;
+      const v1 = 1 - y / heightCells;
+      const v0 = 1 - (y + 1) / heightCells;
+
+      pushFace(top, [[x0, thickness, z0], [x0, thickness, z1], [x1, thickness, z1], [x1, thickness, z0]], [0, 1, 0], [[u0, v0], [u0, v1], [u1, v1], [u1, v0]]);
+      if (!isActive(x - 1, y)) pushFace(side, [[x0, 0, z0], [x0, 0, z1], [x0, thickness, z1], [x0, thickness, z0]], [-1, 0, 0], [[0,0],[1,0],[1,1],[0,1]]);
+      if (!isActive(x + 1, y)) pushFace(side, [[x1, 0, z1], [x1, 0, z0], [x1, thickness, z0], [x1, thickness, z1]], [1, 0, 0], [[0,0],[1,0],[1,1],[0,1]]);
+      if (!isActive(x, y - 1)) pushFace(side, [[x0, 0, z1], [x1, 0, z1], [x1, thickness, z1], [x0, thickness, z1]], [0, 0, 1], [[0,0],[1,0],[1,1],[0,1]]);
+      if (!isActive(x, y + 1)) pushFace(side, [[x1, 0, z0], [x0, 0, z0], [x0, thickness, z0], [x1, thickness, z0]], [0, 0, -1], [[0,0],[1,0],[1,1],[0,1]]);
     }
   }
-  return { data, image, depth };
+
+  return { top: bufferGeometry(top), side: bufferGeometry(side), image };
+}
+
+function disposeMaterial(material) {
+  if (!material) return;
+  const materials = Array.isArray(material) ? material : [material];
+  for (const entry of materials) {
+    for (const key of ['map', 'alphaMap', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap']) {
+      entry[key]?.dispose?.();
+    }
+    entry.dispose?.();
+  }
+}
+
+function disposeGroup(group) {
+  if (!group) return;
+  group.traverse(object => {
+    if (object.geometry) object.geometry.dispose?.();
+    if (object.material) disposeMaterial(object.material);
+  });
+  group.clear();
+}
+
+function textureFromCanvas(canvas) {
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  return texture;
+}
+
+function normalizedState(input) {
+  const state = structuredClone(input || {});
+  state.outputVisible = state.outputVisible !== false;
+  state.scene ||= {};
+  state.scene.anchor = { x: 0, y: 0, z: 0, rotationY: 0, scale: 1, locked: true, ...(state.scene.anchor || {}) };
+  state.scene.base = { imageUrl: '/assets/default-base.png', thickness: 0.32, scale: 8.5, color: '#d9e1ec', alphaThreshold: 0.18, ...(state.scene.base || {}) };
+  state.scene.bars = { width: 0.9, depth: 0.78, maxHeight: 4.8, gap: 0.48, labelScale: 1, imageScale: 1.05, ...(state.scene.bars || {}) };
+  state.scene.items = Array.isArray(state.scene.items) ? state.scene.items : [];
+  state.scene.lighting = { ambient: 0.58, key: 1.15, shadowOpacity: 0.28, ...(state.scene.lighting || {}) };
+  state.scene.lights = Array.isArray(state.scene.lights) ? state.scene.lights : [];
+  state.scene.model = {
+    url: '', name: '', format: '', visible: true,
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0 },
+    scale: 1,
+    animation: { clipName: '', play: true, loop: true, speed: 1 },
+    ...(state.scene.model || {})
+  };
+  state.scene.model.position = { x: 0, y: 0, z: 0, ...(state.scene.model.position || {}) };
+  state.scene.model.rotation = { x: 0, y: 0, z: 0, ...(state.scene.model.rotation || {}) };
+  state.scene.model.animation = { clipName: '', play: true, loop: true, speed: 1, ...(state.scene.model.animation || {}) };
+  return state;
 }
 
 export class BroadcastRenderer {
   constructor(canvas, options = {}) {
     this.canvas = canvas;
     this.interactive = Boolean(options.interactive);
-    this.gl = canvas.getContext('webgl2', { alpha: true, antialias: true, premultipliedAlpha: false });
-    if (!this.gl) throw new Error('WebGL 2 não está disponível neste navegador.');
-    this.state = null;
-    this.camera = { yaw: 0.7, pitch: 0.38, distance: 13.5, target: [0, 1.8, 0], fov: 42 };
-    this.meshes = [];
-    this.overlayMeshes = [];
-    this.textureCache = new Map();
-    this.canvasTextureCache = new Map();
-    this.baseBuildToken = 0;
-    this.needsFrame = true;
+    this.state = normalizedState({});
+    this.cameraState = { yaw: 0.7, pitch: 0.38, distance: 13.5, target: [0, 1.8, 0], fov: 42 };
     this.drag = null;
-    this.initGL();
+    this.coreToken = 0;
+    this.modelToken = 0;
+    this.currentModelUrl = '';
+    this.currentClipName = '';
+    this.modelAnimations = [];
+    this.mixer = null;
+    this.activeAction = null;
+    this.clock = new THREE.Clock();
+
+    this.renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, premultipliedAlpha: false, powerPreference: 'high-performance' });
+    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    this.scene3d = new THREE.Scene();
+    this.camera3d = new THREE.PerspectiveCamera(42, 16 / 9, 0.03, 250);
+    this.anchorGroup = new THREE.Group();
+    this.coreGroup = new THREE.Group();
+    this.modelPivot = new THREE.Group();
+    this.lightGroup = new THREE.Group();
+    this.helperGroup = new THREE.Group();
+    this.anchorGroup.add(this.coreGroup, this.modelPivot);
+    this.scene3d.add(this.anchorGroup, this.lightGroup, this.helperGroup);
+
+    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.58);
+    this.keyLight = new THREE.DirectionalLight(0xffffff, 1.15);
+    this.keyLight.position.set(-7, 11, 8);
+    this.keyLight.castShadow = true;
+    this.keyLight.shadow.mapSize.set(2048, 2048);
+    this.keyLight.shadow.camera.near = 0.1;
+    this.keyLight.shadow.camera.far = 60;
+    this.keyLight.shadow.camera.left = -16;
+    this.keyLight.shadow.camera.right = 16;
+    this.keyLight.shadow.camera.top = 16;
+    this.keyLight.shadow.camera.bottom = -16;
+    this.scene3d.add(this.ambientLight, this.keyLight);
+
+    this.shadowPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(70, 70),
+      new THREE.ShadowMaterial({ color: 0x000000, opacity: 0.28, transparent: true })
+    );
+    this.shadowPlane.rotation.x = -Math.PI / 2;
+    this.shadowPlane.position.y = -0.004;
+    this.shadowPlane.receiveShadow = true;
+    this.anchorGroup.add(this.shadowPlane);
+
+    this.gltfLoader = new GLTFLoader();
+    this.dracoLoader = new DRACOLoader();
+    this.dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/libs/draco/');
+    this.gltfLoader.setDRACOLoader(this.dracoLoader);
+    this.objLoader = new OBJLoader();
+    this.textureLoader = new THREE.TextureLoader();
+
     this.initControls();
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas.parentElement || canvas);
@@ -301,95 +272,33 @@ export class BroadcastRenderer {
     this.loop();
   }
 
-  initGL() {
-    const gl = this.gl;
-    const vertex = `#version 300 es
-      precision highp float;
-      in vec3 aPosition;
-      in vec3 aNormal;
-      in vec2 aUv;
-      in float aTexMix;
-      uniform mat4 uMvp;
-      uniform mat4 uModel;
-      out vec3 vNormal;
-      out vec2 vUv;
-      out float vTexMix;
-      void main() {
-        gl_Position = uMvp * vec4(aPosition, 1.0);
-        vNormal = mat3(uModel) * aNormal;
-        vUv = aUv;
-        vTexMix = aTexMix;
-      }
-    `;
-    const fragment = `#version 300 es
-      precision highp float;
-      in vec3 vNormal;
-      in vec2 vUv;
-      in float vTexMix;
-      uniform vec4 uColor;
-      uniform sampler2D uTexture;
-      uniform float uUseTexture;
-      uniform float uAmbient;
-      uniform float uKey;
-      out vec4 outColor;
-      void main() {
-        vec4 textureColor = texture(uTexture, vUv);
-        vec4 base = mix(uColor, textureColor, clamp(vTexMix * uUseTexture, 0.0, 1.0));
-        if (base.a < 0.035) discard;
-        vec3 n = normalize(vNormal);
-        vec3 lightDir = normalize(vec3(-0.45, 0.95, 0.55));
-        float diffuse = max(dot(n, lightDir), 0.0);
-        float lighting = clamp(uAmbient + diffuse * uKey, 0.0, 1.55);
-        outColor = vec4(base.rgb * lighting, base.a);
-      }
-    `;
-    this.program = createProgram(gl, vertex, fragment);
-    this.locations = {
-      position: gl.getAttribLocation(this.program, 'aPosition'),
-      normal: gl.getAttribLocation(this.program, 'aNormal'),
-      uv: gl.getAttribLocation(this.program, 'aUv'),
-      texMix: gl.getAttribLocation(this.program, 'aTexMix'),
-      mvp: gl.getUniformLocation(this.program, 'uMvp'),
-      model: gl.getUniformLocation(this.program, 'uModel'),
-      color: gl.getUniformLocation(this.program, 'uColor'),
-      texture: gl.getUniformLocation(this.program, 'uTexture'),
-      useTexture: gl.getUniformLocation(this.program, 'uUseTexture'),
-      ambient: gl.getUniformLocation(this.program, 'uAmbient'),
-      key: gl.getUniformLocation(this.program, 'uKey')
-    };
-    this.whiteTexture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, this.whiteTexture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.LEQUAL);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    gl.clearColor(0, 0, 0, 0);
-  }
-
   initControls() {
     if (!this.interactive) return;
     this.canvas.addEventListener('pointerdown', event => {
       this.canvas.setPointerCapture(event.pointerId);
-      this.drag = { x: event.clientX, y: event.clientY, yaw: this.camera.yaw, pitch: this.camera.pitch, target: [...this.camera.target], pan: event.shiftKey || event.button === 1 };
+      this.drag = {
+        x: event.clientX,
+        y: event.clientY,
+        yaw: this.cameraState.yaw,
+        pitch: this.cameraState.pitch,
+        target: [...this.cameraState.target],
+        pan: event.shiftKey || event.button === 1
+      };
     });
     this.canvas.addEventListener('pointermove', event => {
       if (!this.drag) return;
       const dx = event.clientX - this.drag.x;
       const dy = event.clientY - this.drag.y;
       if (this.drag.pan) {
-        const speed = this.camera.distance * 0.0017;
-        const right = [Math.cos(this.camera.yaw), 0, -Math.sin(this.camera.yaw)];
-        this.camera.target[0] = this.drag.target[0] - right[0] * dx * speed;
-        this.camera.target[2] = this.drag.target[2] - right[2] * dx * speed;
-        this.camera.target[1] = this.drag.target[1] + dy * speed;
+        const speed = this.cameraState.distance * 0.0017;
+        const right = [Math.cos(this.cameraState.yaw), 0, -Math.sin(this.cameraState.yaw)];
+        this.cameraState.target[0] = this.drag.target[0] - right[0] * dx * speed;
+        this.cameraState.target[2] = this.drag.target[2] - right[2] * dx * speed;
+        this.cameraState.target[1] = this.drag.target[1] + dy * speed;
       } else {
-        this.camera.yaw = this.drag.yaw - dx * 0.008;
-        this.camera.pitch = clamp(this.drag.pitch + dy * 0.006, -0.02, 1.36);
+        this.cameraState.yaw = this.drag.yaw - dx * 0.008;
+        this.cameraState.pitch = clamp(this.drag.pitch + dy * 0.006, -1.55, 1.55);
       }
-      this.needsFrame = true;
       this.dispatchCameraChange();
     });
     const end = () => { this.drag = null; };
@@ -397,8 +306,7 @@ export class BroadcastRenderer {
     this.canvas.addEventListener('pointercancel', end);
     this.canvas.addEventListener('wheel', event => {
       event.preventDefault();
-      this.camera.distance = clamp(this.camera.distance * Math.exp(event.deltaY * 0.001), 3, 45);
-      this.needsFrame = true;
+      this.cameraState.distance = clamp(this.cameraState.distance * Math.exp(event.deltaY * 0.001), 2, 60);
       this.dispatchCameraChange();
     }, { passive: false });
   }
@@ -407,156 +315,147 @@ export class BroadcastRenderer {
     this.canvas.dispatchEvent(new CustomEvent('camera-change', { detail: this.getCameraSnapshot() }));
   }
 
-  resize() {
-    const rect = this.canvas.getBoundingClientRect();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const width = Math.max(2, Math.floor(rect.width * dpr));
-    const height = Math.max(2, Math.floor(rect.height * dpr));
-    if (this.canvas.width !== width || this.canvas.height !== height) {
-      this.canvas.width = width;
-      this.canvas.height = height;
-      this.needsFrame = true;
-    }
+  dispatchModelInfo() {
+    this.canvas.dispatchEvent(new CustomEvent('model-info', {
+      detail: {
+        name: this.state.scene.model.name || '',
+        format: this.state.scene.model.format || '',
+        animations: this.modelAnimations.map(clip => clip.name || `Animação ${this.modelAnimations.indexOf(clip) + 1}`)
+      }
+    }));
   }
 
-  setState(state) {
-    const next = structuredClone(state);
-    const signature = JSON.stringify(next.scene || {});
-    const changed = signature !== this.sceneSignature;
-    this.sceneSignature = signature;
+  resize() {
+    const rect = this.canvas.getBoundingClientRect();
+    const width = Math.max(2, Math.floor(rect.width));
+    const height = Math.max(2, Math.floor(rect.height));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setSize(width, height, false);
+    this.camera3d.aspect = width / height;
+    this.camera3d.updateProjectionMatrix();
+  }
+
+  setState(input) {
+    const next = normalizedState(input);
+    const coreSignature = JSON.stringify({
+      anchor: next.scene.anchor,
+      base: next.scene.base,
+      bars: next.scene.bars,
+      items: next.scene.items
+    });
+    const lightSignature = JSON.stringify({ lighting: next.scene.lighting, lights: next.scene.lights });
+    const modelUrlChanged = next.scene.model.url !== this.currentModelUrl;
+    const coreChanged = coreSignature !== this.coreSignature;
+    const lightsChanged = lightSignature !== this.lightSignature;
+
     this.state = next;
-    if (changed) this.rebuildScene();
-    else this.needsFrame = true;
+    this.coreSignature = coreSignature;
+    this.lightSignature = lightSignature;
+    this.applyAnchor();
+    this.applyGlobalLighting();
+    if (coreChanged) this.rebuildCore();
+    if (lightsChanged) this.rebuildLights();
+    if (modelUrlChanged) this.loadModel();
+    else this.applyModelSettings();
   }
 
   setCamera(camera) {
     if (!camera) return;
-    this.camera = {
+    this.cameraState = {
       yaw: Number(camera.yaw ?? 0.7),
       pitch: Number(camera.pitch ?? 0.38),
       distance: Number(camera.distance ?? 13.5),
       target: Array.isArray(camera.target) ? camera.target.map(Number) : [0, 1.8, 0],
       fov: Number(camera.fov ?? 42)
     };
-    this.needsFrame = true;
     this.dispatchCameraChange();
   }
 
   getCameraSnapshot() {
     return {
-      yaw: Number(this.camera.yaw),
-      pitch: Number(this.camera.pitch),
-      distance: Number(this.camera.distance),
-      target: this.camera.target.map(Number),
-      fov: Number(this.camera.fov)
+      yaw: Number(this.cameraState.yaw),
+      pitch: Number(this.cameraState.pitch),
+      distance: Number(this.cameraState.distance),
+      target: this.cameraState.target.map(Number),
+      fov: Number(this.cameraState.fov)
     };
   }
 
   setFov(value) {
-    this.camera.fov = clamp(Number(value) || 42, 15, 100);
-    this.needsFrame = true;
+    this.cameraState.fov = clamp(Number(value) || 42, 15, 100);
     this.dispatchCameraChange();
   }
 
-  createMesh(data) {
-    const gl = this.gl;
-    const vao = gl.createVertexArray();
-    gl.bindVertexArray(vao);
-    const createBuffer = (values, location, size) => {
-      const buffer = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(values), gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(location);
-      gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
-      return buffer;
-    };
-    const buffers = [
-      createBuffer(data.positions, this.locations.position, 3),
-      createBuffer(data.normals, this.locations.normal, 3),
-      createBuffer(data.uvs, this.locations.uv, 2),
-      createBuffer(data.texMix, this.locations.texMix, 1)
-    ];
-    gl.bindVertexArray(null);
-    return { vao, buffers, count: data.positions.length / 3 };
+  applyAnchor() {
+    const anchor = this.state.scene.anchor;
+    this.anchorGroup.position.set(Number(anchor.x || 0), Number(anchor.y || 0), Number(anchor.z || 0));
+    this.anchorGroup.rotation.set(0, Number(anchor.rotationY || 0) * DEG, 0);
+    const scale = Math.max(0.001, Number(anchor.scale || 1));
+    this.anchorGroup.scale.setScalar(scale);
   }
 
-  disposeMesh(mesh) {
-    if (!mesh) return;
-    for (const buffer of mesh.buffers || []) this.gl.deleteBuffer(buffer);
-    if (mesh.vao) this.gl.deleteVertexArray(mesh.vao);
+  applyGlobalLighting() {
+    const lighting = this.state.scene.lighting;
+    this.ambientLight.intensity = Number(lighting.ambient ?? 0.58);
+    this.keyLight.intensity = Number(lighting.key ?? 1.15);
+    this.shadowPlane.material.opacity = Number(lighting.shadowOpacity ?? 0.28);
   }
 
-  textureFromCanvas(key, canvas) {
-    if (this.canvasTextureCache.has(key)) return this.canvasTextureCache.get(key);
-    const gl = this.gl;
-    const texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    this.canvasTextureCache.set(key, texture);
+  async loadTexture(url) {
+    if (!url) return null;
+    const texture = await this.textureLoader.loadAsync(url);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
     return texture;
   }
 
-  requestTexture(url) {
-    if (!url) return this.whiteTexture;
-    const cached = this.textureCache.get(url);
-    if (cached?.texture) return cached.texture;
-    if (cached?.loading) return this.whiteTexture;
-    const record = { loading: true, texture: null };
-    this.textureCache.set(url, record);
-    loadImage(url).then(image => {
-      const gl = this.gl;
-      const texture = gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      record.loading = false;
-      record.texture = texture;
-      this.needsFrame = true;
-    }).catch(() => { record.loading = false; });
-    return this.whiteTexture;
-  }
-
-  anchorMatrix() {
-    const anchor = this.state?.scene?.anchor || {};
-    let model = mat4Translation(Number(anchor.x || 0), Number(anchor.y || 0), Number(anchor.z || 0));
-    model = mat4Multiply(model, mat4RotationY(Number(anchor.rotationY || 0) * DEG));
-    const scale = Number(anchor.scale || 1);
-    return mat4Multiply(model, mat4Scale(scale, scale, scale));
-  }
-
-  async rebuildScene() {
-    if (!this.state?.scene) return;
-    const token = ++this.baseBuildToken;
-    for (const entry of [...this.meshes, ...this.overlayMeshes]) this.disposeMesh(entry.mesh);
-    this.meshes = [];
-    this.overlayMeshes = [];
-    this.canvasTextureCache.clear();
+  async rebuildCore() {
+    const token = ++this.coreToken;
+    disposeGroup(this.coreGroup);
     const scene = this.state.scene;
     const base = scene.base;
+
     try {
-      const result = await baseGeometryFromImage(base.imageUrl, Number(base.thickness), Number(base.scale), Number(base.alphaThreshold));
-      if (token !== this.baseBuildToken) return;
-      this.meshes.push({
-        mesh: this.createMesh(result.data),
-        model: this.anchorMatrix(),
-        color: colorToArray(base.color),
-        textureUrl: base.imageUrl,
-        useTexture: true
+      const [geometry, topTexture] = await Promise.all([
+        baseGeometryFromImage(base.imageUrl, Number(base.thickness), Number(base.scale), Number(base.alphaThreshold)),
+        this.loadTexture(base.imageUrl)
+      ]);
+      if (token !== this.coreToken) {
+        geometry.top.dispose();
+        geometry.side.dispose();
+        topTexture?.dispose();
+        return;
+      }
+      const topMaterial = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        map: topTexture,
+        transparent: true,
+        alphaTest: 0.02,
+        side: THREE.DoubleSide,
+        roughness: 0.74,
+        metalness: 0.04
       });
+      const sideMaterial = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(base.color || '#d9e1ec'),
+        side: THREE.DoubleSide,
+        roughness: 0.8,
+        metalness: 0.03
+      });
+      const topMesh = new THREE.Mesh(geometry.top, topMaterial);
+      const sideMesh = new THREE.Mesh(geometry.side, sideMaterial);
+      topMesh.receiveShadow = true;
+      topMesh.castShadow = true;
+      sideMesh.receiveShadow = true;
+      sideMesh.castShadow = true;
+      this.coreGroup.add(sideMesh, topMesh);
     } catch (error) {
       console.warn(error.message);
     }
-    const items = Array.isArray(scene.items) ? scene.items : [];
-    const bars = scene.bars || {};
+
+    const items = scene.items;
+    const bars = scene.bars;
     const maxValue = Math.max(1, ...items.map(item => Number(item.value) || 0));
     const width = Number(bars.width || 0.9);
     const depth = Number(bars.depth || 0.78);
@@ -564,90 +463,194 @@ export class BroadcastRenderer {
     const total = items.length * width + Math.max(0, items.length - 1) * gap;
     const startX = -total / 2 + width / 2;
     const baseY = Number(base.thickness || 0.32);
-    const anchor = this.anchorMatrix();
-    items.forEach((item, index) => {
+
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
       const height = Math.max(0.22, (Number(item.value) || 0) / maxValue * Number(bars.maxHeight || 4.8));
       const x = startX + index * (width + gap);
-      const barModel = mat4Multiply(anchor, mat4Translation(x, baseY + height / 2, 0));
-      this.meshes.push({ mesh: this.createMesh(boxGeometry(width, height, depth)), model: barModel, color: colorToArray(item.color), textureUrl: '', useTexture: false });
-      const worldImage = transformPoint(anchor, [x, baseY + height + 0.78 * Number(bars.imageScale || 1), 0]);
-      const imageTexture = item.imageUrl ? this.requestTexture(item.imageUrl) : this.textureFromCanvas(`icon:${item.id}:${item.color}`, createPlaceholderCanvas(item));
-      this.overlayMeshes.push({
-        mesh: this.createMesh(planeGeometry(1.15 * Number(bars.imageScale || 1), 1.15 * Number(bars.imageScale || 1))),
-        billboardPosition: worldImage,
-        color: [1,1,1,1], texture: imageTexture, textureUrl: item.imageUrl || '', useTexture: true
+      const geometry = new THREE.BoxGeometry(width, height, depth);
+      const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(item.color || '#3b82f6'), roughness: 0.46, metalness: 0.08 });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(x, baseY + height / 2, 0);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      this.coreGroup.add(mesh);
+
+      let iconTexture;
+      try {
+        iconTexture = item.imageUrl ? await this.loadTexture(item.imageUrl) : textureFromCanvas(createPlaceholderCanvas(item));
+      } catch {
+        iconTexture = textureFromCanvas(createPlaceholderCanvas(item));
+      }
+      if (token !== this.coreToken) {
+        iconTexture?.dispose();
+        return;
+      }
+      const iconMaterial = new THREE.SpriteMaterial({ map: iconTexture, transparent: true, alphaTest: 0.02, depthTest: true, depthWrite: false });
+      const icon = new THREE.Sprite(iconMaterial);
+      const iconScale = 1.28 * Number(bars.imageScale || 1);
+      icon.scale.set(iconScale, iconScale, 1);
+      icon.position.set(x, baseY + height + iconScale * 0.62, 0);
+      icon.renderOrder = 5;
+      this.coreGroup.add(icon);
+
+      const labelTexture = textureFromCanvas(createLabelCanvas(item));
+      const labelMaterial = new THREE.SpriteMaterial({ map: labelTexture, transparent: true, alphaTest: 0.02, depthTest: true, depthWrite: false });
+      const label = new THREE.Sprite(labelMaterial);
+      const labelScale = Number(bars.labelScale || 1);
+      label.scale.set(2.4 * labelScale, 0.78 * labelScale, 1);
+      label.position.set(x, baseY + height + iconScale + 0.62 * labelScale, 0);
+      label.renderOrder = 6;
+      this.coreGroup.add(label);
+    }
+
+    this.applyModelSettings();
+  }
+
+  rebuildLights() {
+    disposeGroup(this.lightGroup);
+    disposeGroup(this.helperGroup);
+    const lights = this.state.scene.lights;
+    for (const data of lights) {
+      if (data.enabled === false) continue;
+      const light = new THREE.PointLight(
+        new THREE.Color(data.color || '#ffffff'),
+        Number(data.intensity ?? 2),
+        Number(data.distance ?? 18),
+        2
+      );
+      light.position.set(Number(data.x || 0), Number(data.y || 4), Number(data.z || 0));
+      light.castShadow = true;
+      light.shadow.mapSize.set(1024, 1024);
+      light.shadow.bias = -0.001;
+      this.lightGroup.add(light);
+      if (this.interactive) {
+        const helper = new THREE.PointLightHelper(light, 0.22, new THREE.Color(data.color || '#ffffff'));
+        this.helperGroup.add(helper);
+      }
+    }
+  }
+
+  clearModel() {
+    if (this.activeAction) this.activeAction.stop();
+    this.activeAction = null;
+    this.mixer = null;
+    this.modelAnimations = [];
+    this.currentClipName = '';
+    disposeGroup(this.modelPivot);
+    this.dispatchModelInfo();
+  }
+
+  async loadModel() {
+    const token = ++this.modelToken;
+    const model = this.state.scene.model;
+    this.currentModelUrl = model.url || '';
+    this.clearModel();
+    if (!model.url) return;
+
+    try {
+      let root;
+      let animations = [];
+      const format = String(model.format || '').toLowerCase();
+      if (format === 'obj') {
+        const response = await fetch(model.url);
+        if (!response.ok) throw new Error(`Falha ao abrir OBJ (${response.status})`);
+        root = this.objLoader.parse(await response.text());
+      } else {
+        const gltf = await this.gltfLoader.loadAsync(model.url);
+        root = gltf.scene || gltf.scenes?.[0];
+        animations = Array.isArray(gltf.animations) ? gltf.animations : [];
+      }
+      if (token !== this.modelToken || !root) return;
+
+      root.traverse(object => {
+        if (!object.isMesh) return;
+        object.castShadow = true;
+        object.receiveShadow = true;
+        if (format === 'obj') {
+          const source = Array.isArray(object.material) ? object.material[0] : object.material;
+          object.material = new THREE.MeshStandardMaterial({
+            color: source?.color || new THREE.Color('#d7dde8'),
+            roughness: 0.58,
+            metalness: 0.06,
+            side: THREE.DoubleSide
+          });
+        }
       });
-      const worldLabel = transformPoint(anchor, [x, baseY + height + 1.72 * Number(bars.labelScale || 1), 0]);
-      const labelTexture = this.textureFromCanvas(`label:${item.id}:${item.name}:${item.value}:${bars.labelScale}`, createLabelCanvas(item, 1));
-      this.overlayMeshes.push({
-        mesh: this.createMesh(planeGeometry(2.15 * Number(bars.labelScale || 1), 0.74 * Number(bars.labelScale || 1))),
-        billboardPosition: worldLabel,
-        color: [1,1,1,1], texture: labelTexture, useTexture: true
-      });
-    });
-    this.needsFrame = true;
+
+      root.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(root);
+      if (!box.isEmpty()) {
+        const center = box.getCenter(new THREE.Vector3());
+        root.position.x -= center.x;
+        root.position.z -= center.z;
+        root.position.y -= box.min.y;
+      }
+
+      this.modelPivot.add(root);
+      this.modelAnimations = animations;
+      if (animations.length) this.mixer = new THREE.AnimationMixer(root);
+      this.dispatchModelInfo();
+      this.applyModelSettings(true);
+    } catch (error) {
+      console.error(error);
+      this.canvas.dispatchEvent(new CustomEvent('model-error', { detail: { message: error.message || 'Falha ao carregar o modelo.' } }));
+    }
   }
 
-  billboardMatrix(position, eye, target) {
-    const forward = normalize(subtract(target, eye));
-    const right = normalize(cross(forward, [0, 1, 0]));
-    const up = normalize(cross(right, forward));
-    const normal = [-forward[0], -forward[1], -forward[2]];
-    return new Float32Array([
-      right[0], right[1], right[2], 0,
-      up[0], up[1], up[2], 0,
-      normal[0], normal[1], normal[2], 0,
-      position[0], position[1], position[2], 1
-    ]);
+  applyModelSettings(forceAnimation = false) {
+    const model = this.state.scene.model;
+    this.modelPivot.visible = Boolean(model.visible && model.url);
+    const position = model.position;
+    const rotation = model.rotation;
+    this.modelPivot.position.set(
+      Number(position.x || 0),
+      Number(this.state.scene.base.thickness || 0) + Number(position.y || 0),
+      Number(position.z || 0)
+    );
+    this.modelPivot.rotation.set(Number(rotation.x || 0) * DEG, Number(rotation.y || 0) * DEG, Number(rotation.z || 0) * DEG);
+    const scale = Math.max(0.001, Number(model.scale || 1));
+    this.modelPivot.scale.setScalar(scale);
+
+    if (!this.mixer || !this.modelAnimations.length) return;
+    const animation = model.animation;
+    const wantedName = animation.clipName && this.modelAnimations.some(clip => clip.name === animation.clipName)
+      ? animation.clipName
+      : this.modelAnimations[0].name;
+    if (forceAnimation || wantedName !== this.currentClipName || !this.activeAction) {
+      this.activeAction?.stop();
+      const clip = this.modelAnimations.find(entry => entry.name === wantedName) || this.modelAnimations[0];
+      this.activeAction = this.mixer.clipAction(clip);
+      this.currentClipName = clip.name;
+      this.activeAction.reset().play();
+    }
+    this.activeAction.paused = animation.play === false;
+    this.activeAction.setLoop(animation.loop === false ? THREE.LoopOnce : THREE.LoopRepeat, animation.loop === false ? 1 : Infinity);
+    this.activeAction.clampWhenFinished = animation.loop === false;
   }
 
-  drawEntry(entry, viewProjection, eye) {
-    const gl = this.gl;
-    const model = entry.billboardPosition ? this.billboardMatrix(entry.billboardPosition, eye, this.camera.target) : entry.model;
-    const mvp = mat4Multiply(viewProjection, model);
-    gl.bindVertexArray(entry.mesh.vao);
-    gl.uniformMatrix4fv(this.locations.model, false, model);
-    gl.uniformMatrix4fv(this.locations.mvp, false, mvp);
-    gl.uniform4fv(this.locations.color, entry.color || [1,1,1,1]);
-    let texture = entry.texture || this.whiteTexture;
-    if (entry.textureUrl) texture = this.requestTexture(entry.textureUrl);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.uniform1i(this.locations.texture, 0);
-    gl.uniform1f(this.locations.useTexture, entry.useTexture ? 1 : 0);
-    gl.drawArrays(gl.TRIANGLES, 0, entry.mesh.count);
+  updateCamera() {
+    const eye = cameraEye(this.cameraState);
+    this.camera3d.position.set(...eye);
+    this.camera3d.up.set(0, 1, 0);
+    this.camera3d.lookAt(new THREE.Vector3(...this.cameraState.target));
+    this.camera3d.fov = clamp(Number(this.cameraState.fov || 42), 15, 100);
+    this.camera3d.updateProjectionMatrix();
   }
 
-  render() {
-    const gl = this.gl;
-    const width = this.canvas.width;
-    const height = this.canvas.height;
-    if (!width || !height) return;
-    gl.viewport(0, 0, width, height);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    if (!this.state?.outputVisible) return;
-    gl.useProgram(this.program);
-    const lighting = this.state?.scene?.lighting || {};
-    gl.uniform1f(this.locations.ambient, Number(lighting.ambient ?? 0.58));
-    gl.uniform1f(this.locations.key, Number(lighting.key ?? 1.15));
-    const eye = cameraEye(this.camera);
-    const projection = mat4Perspective(this.camera.fov, width / height, 0.05, 120);
-    const view = mat4LookAt(eye, this.camera.target);
-    const viewProjection = mat4Multiply(projection, view);
-    gl.depthMask(true);
-    for (const entry of this.meshes) this.drawEntry(entry, viewProjection, eye);
-    gl.depthMask(false);
-    for (const entry of this.overlayMeshes) this.drawEntry(entry, viewProjection, eye);
-    gl.depthMask(true);
-    gl.bindVertexArray(null);
+  render(delta) {
+    this.updateCamera();
+    const animation = this.state.scene.model.animation;
+    if (this.mixer && animation.play !== false) this.mixer.update(delta * Number(animation.speed || 1));
+    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.clear(true, true, true);
+    if (this.state.outputVisible !== false) this.renderer.render(this.scene3d, this.camera3d);
   }
 
   loop() {
     const tick = () => {
-      if (this.needsFrame || this.interactive) {
-        this.render();
-        this.needsFrame = false;
-      }
+      const delta = Math.min(this.clock.getDelta(), 0.1);
+      this.render(delta);
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);

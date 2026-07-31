@@ -1,52 +1,57 @@
-# Broadcast3D Cloud Webapp
+# Broadcast3D Cloud v0.3.0
 
-Webapp para gerar um gráfico 3D ancorado no chão e usá-lo como **overlay transparente sobre o PGM do vMix**.
+Webapp para gerar gráficos 3D transparentes sobre o PGM do vMix, publicado com GitHub + Cloudflare Workers.
 
-A aplicação não lê câmeras, não recebe NDI e não processa o PGM. Ela mantém quatro perspectivas virtuais calibradas manualmente e troca a visualização do mesmo objeto 3D quando o operador corta entre as câmeras físicas.
+## Novidades desta versão
 
-## Recursos desta versão
+- Importação de **GLB** com materiais, texturas e animações incorporadas.
+- Importação de **OBJ** como geometria estática.
+- Controle de reprodução, loop, velocidade e seleção de clipe de animação GLB.
+- Posição, rotação e escala do modelo 3D por sliders.
+- Até 8 pontos de luz ajustáveis por cor, intensidade, alcance e posição XYZ.
+- Controle de luz ambiente, luz principal e sombra de contato.
+- Presets das quatro câmeras virtuais controlados por sliders de yaw, pitch, distância, FOV e alvo XYZ.
+- Campos numéricos de precisão para yaw, pitch, distância e FOV.
+- Links reais gerados automaticamente para Stream Deck após o deploy.
+- Link fixo de cada câmera virtual e link de corte de cada preset.
+- Botões para copiar, testar e abrir cada link.
+- Upload de mídia ampliado para até 48 MB.
 
-- Quatro presets de câmera independentes.
-- Objeto único fixo no chão.
-- Importação de CSV com `nome`, `valor` e `cor`.
-- Base criada a partir de PNG transparente com extrusão.
-- Imagem ilustrativa independente para cada barra.
-- Controle de largura, profundidade, altura e espaçamento das barras.
-- Saída WebGL com fundo transparente para vMix.
-- Sincronização em tempo real entre painel e overlay por WebSocket.
-- Salas independentes por parâmetro `room`.
-- Persistência no Durable Object do Cloudflare.
-- Upload de imagens dividido em blocos no armazenamento do Durable Object.
-- Endpoints para Stream Deck.
-- Estrutura pronta para GitHub e deploy automático no Cloudflare Workers.
+## Formatos 3D
 
-## Arquitetura
+### GLB
+
+É o formato recomendado. Pode conter em um único arquivo:
+
+- geometria;
+- materiais;
+- texturas;
+- esqueleto;
+- animações.
+
+### OBJ
+
+Nesta versão, OBJ é importado somente como geometria estática. Arquivos MTL e texturas externas não são carregados em conjunto. Para preservar materiais e animações, converta para GLB.
+
+## Estrutura
 
 ```text
-GitHub
-  └─ push na branch main
-       └─ Cloudflare Workers Builds
-            ├─ arquivos estáticos: painel + overlay
-            ├─ Worker: API e autenticação
-            └─ Durable Object por sala
-                 ├─ estado do projeto
-                 ├─ quatro câmeras
-                 ├─ imagens enviadas
-                 └─ WebSockets conectados
-
-vMix PGM
-  +
-Web Browser Input: /program.html?room=studio
-  =
-Saída final com gráfico 3D
+public/
+├── index.html              painel do operador
+├── program.html            overlay transparente para vMix
+├── js/
+│   ├── operator.js
+│   ├── program.js
+│   ├── cloud.js
+│   └── renderer3d.js       Three.js + GLTFLoader + OBJLoader
+└── assets/
+src/
+└── index.js                Worker + Durable Object
 ```
 
 ## Desenvolvimento local
 
-Requisitos:
-
-- Node.js 20 ou superior.
-- Conta Cloudflare apenas para o deploy; o desenvolvimento local funciona com a simulação do Wrangler.
+Requer Node.js 20 ou superior.
 
 ```bash
 npm install
@@ -56,44 +61,46 @@ npm run dev
 Abra:
 
 ```text
-Painel:  http://localhost:8787/?room=studio
-Overlay: http://localhost:8787/program.html?room=studio
+http://localhost:8787/?room=studio
 ```
 
-## Proteção do painel
+Overlay:
 
-A chave é opcional no desenvolvimento. Para ativá-la, crie `.dev.vars` a partir de `.dev.vars.example`:
-
-```env
-CONTROL_TOKEN=uma-chave-longa-e-aleatoria
+```text
+http://localhost:8787/program.html?room=studio
 ```
 
-No Cloudflare, cadastre o mesmo valor como secret `CONTROL_TOKEN`. O overlay continua podendo ler o estado, mas alterações e cortes exigem a chave.
+## Deploy no Cloudflare
 
-## Deploy
+```bash
+npm install
+npx wrangler login
+npm run deploy
+```
 
-Consulte [DEPLOY-CLOUDFLARE.md](DEPLOY-CLOUDFLARE.md).
+Também é possível conectar o repositório no painel **Workers & Pages** para publicar automaticamente a cada push no GitHub.
 
 ## vMix
 
-Consulte [VMIX.md](VMIX.md).
+Adicione o overlay como **Web Browser Input**:
 
-## CSV
-
-```csv
-nome;valor;cor
-Candidato A;42;#3567d7
-Candidato B;35;#10a9a6
-Candidato C;17;#7650a8
-Candidato D;6;#e9781b
+```text
+https://SEU-WORKER.workers.dev/program.html?room=studio
 ```
 
-O aplicativo aceita vírgula ou ponto e vírgula como separador e limita o gráfico a 12 barras.
+Use 1920×1080, áudio desativado e mantenha o Browser Input em um Overlay sobre o PGM.
 
-## Limites atuais
+## Stream Deck
 
-- A perspectiva não é lida das câmeras; cada câmera usa um preset virtual salvo.
-- Trocas de câmera com o gráfico no ar devem usar CUT. Durante uma dissolvência, apenas uma perspectiva virtual fica ativa.
-- Cada arquivo enviado pode ter até 12 MB.
-- O render depende de WebGL 2 no Web Browser Input do vMix.
-- Como o estado está na nuvem, a operação depende de conexão com a internet. Para redundância, a mesma base pode ser executada localmente com `npm run dev`.
+Na aba **Stream Deck**, o painel gera os endereços usando o domínio real em que o app está aberto.
+
+Para cada câmera:
+
+- `Link de corte`: ativa o preset virtual no overlay dinâmico.
+- `Link da câmera virtual fixa`: abre o overlay travado naquele preset.
+
+No Stream Deck, use a ação **Website** e ative a execução de GET em segundo plano para o link de corte.
+
+## Observação sobre o Three.js
+
+O projeto fixa o Three.js na versão `0.185.1` através de import map, evitando mudanças inesperadas de versão durante a operação.

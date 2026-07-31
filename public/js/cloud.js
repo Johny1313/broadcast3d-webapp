@@ -38,6 +38,15 @@ export function programUrl(room = getRoom()) {
   return url.toString();
 }
 
+
+export function fixedProgramUrl(cameraId, room = getRoom()) {
+  const id = Math.max(1, Math.min(4, Number(cameraId) || 1));
+  const url = new URL('/program.html', location.origin);
+  url.searchParams.set('room', sanitizeRoom(room));
+  url.searchParams.set('camera', String(id));
+  return url.toString();
+}
+
 export function controlUrl(path, room = getRoom(), token = getToken()) {
   const url = new URL(path, location.origin);
   url.searchParams.set('room', sanitizeRoom(room));

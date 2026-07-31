@@ -1,51 +1,36 @@
-# Uso como overlay no vMix
+# Uso no vMix
 
-## Entrada do overlay
+## Overlay dinâmico
 
 No vMix:
 
-1. Selecione **Add Input**.
-2. Escolha **Web Browser**.
-3. Cole o endereço:
+1. `Add Input`.
+2. `Web Browser`.
+3. Cole o endereço mostrado em **Overlay dinâmico para vMix**.
+4. Configure 1920 × 1080.
+5. Desative áudio.
+6. Use o input em Overlay 1, 2, 3 ou 4 sobre o PGM.
 
-```text
-https://SEU-DOMINIO/program.html?room=studio
-```
+O fundo do `program.html` é transparente.
 
-4. Use a resolução do projeto, normalmente 1920 × 1080.
-5. Desative áudio dessa entrada.
-6. Mantenha a entrada como Overlay sobre o PGM.
+## Quatro perspectivas
 
-A página possui fundo transparente e mostra somente a base PNG, barras, textos e imagens.
+O mesmo objeto fica fixo no espaço 3D. Cada preset salva uma câmera virtual independente:
 
-## Operação das quatro câmeras
+- CAM 1 — enquadramento A;
+- CAM 2 — enquadramento B;
+- CAM 3 — enquadramento C;
+- CAM 4 — enquadramento D.
 
-A relação deve ser fixa:
+O Stream Deck deve realizar duas ações no mesmo botão:
 
-```text
-Câmera física 1 → perspectiva virtual 1
-Câmera física 2 → perspectiva virtual 2
-Câmera física 3 → perspectiva virtual 3
-Câmera física 4 → perspectiva virtual 4
-```
+1. cortar a câmera física no vMix;
+2. executar o link de corte do mesmo número no Broadcast3D.
 
-Calibre cada preset usando um frame da respectiva câmera como guia e salve o enquadramento.
+## Links fixos
 
-## Stream Deck
-
-Use uma Multi Action para cada câmera:
-
-1. Ação vMix para cortar a câmera física.
-2. Ação System/Open apontando para o BAT correspondente em `streamdeck`.
-
-Edite nos BAT:
-
-```bat
-set BASE_URL=https://SEU-DOMINIO
-set ROOM=studio
-set TOKEN=SUA_CHAVE
-```
+Também são gerados quatro links `program.html?camera=N`. Eles mantêm uma perspectiva específica, independentemente do corte ativo, e servem para teste ou para criar quatro Browser Inputs separados.
 
 ## Transições
 
-Com o gráfico no ar, use CUT entre as câmeras. Em uma dissolvência, o PGM mistura dois enquadramentos físicos enquanto o overlay só consegue exibir uma perspectiva virtual.
+Para manter a correspondência de perspectiva durante o gráfico, priorize CUT entre câmeras. Uma dissolvência mistura duas imagens físicas enquanto o overlay dinâmico utiliza apenas uma perspectiva por vez.

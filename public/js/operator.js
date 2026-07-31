@@ -1,21 +1,80 @@
 import { BroadcastRenderer } from './renderer3d.js';
-import { api, connectSocket, controlUrl, getRoom, getToken, programUrl, setConnection } from './cloud.js';
+import { api, connectSocket, controlUrl, fixedProgramUrl, getRoom, getToken, programUrl, setConnection } from './cloud.js';
 
 const $ = id => document.getElementById(id);
+const DEG = Math.PI / 180;
 let state = null;
 let renderer = null;
 let workingCamera = null;
+let availableAnimations = [];
 let saveTimer = null;
 let toastTimer = null;
 let suppressInputs = false;
 let socketController = null;
+
+function defaultLight(index = 1) {
+  return {
+    id: crypto.randomUUID?.() || `light-${Date.now()}-${Math.random()}`,
+    name: `Luz ${index}`,
+    enabled: true,
+    color: '#ffffff',
+    intensity: 2.2,
+    distance: 18,
+    x: index % 2 ? -4 : 4,
+    y: 5,
+    z: 4
+  };
+}
+
+function normalizeState(input) {
+  const next = structuredClone(input || {});
+  next.version = 3;
+  next.projectName ||= 'Projeto 3D - Eleições';
+  next.activeCamera = Number(next.activeCamera || 1);
+  next.selectedCamera = Number(next.selectedCamera || next.activeCamera || 1);
+  next.outputVisible = next.outputVisible !== false;
+  next.scene ||= {};
+  next.scene.anchor = { x: 0, y: 0, z: 0, rotationY: 0, scale: 1, locked: true, ...(next.scene.anchor || {}) };
+  next.scene.base = { imageUrl: '/assets/default-base.png', thickness: 0.32, scale: 8.5, color: '#d9e1ec', alphaThreshold: 0.18, ...(next.scene.base || {}) };
+  next.scene.bars = { width: 0.9, depth: 0.78, maxHeight: 4.8, gap: 0.48, labelScale: 1, imageScale: 1.05, ...(next.scene.bars || {}) };
+  next.scene.items = Array.isArray(next.scene.items) ? next.scene.items : [];
+  next.scene.lighting = { ambient: 0.58, key: 1.15, shadowOpacity: 0.28, ...(next.scene.lighting || {}) };
+  next.scene.lights = Array.isArray(next.scene.lights) ? next.scene.lights : [defaultLight(1), { ...defaultLight(2), color: '#6fa8ff', x: 4, z: -2, intensity: 1.4 }];
+  next.scene.model = {
+    url: '', name: '', format: '', visible: true,
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0 },
+    scale: 1,
+    animation: { clipName: '', play: true, loop: true, speed: 1 },
+    ...(next.scene.model || {})
+  };
+  next.scene.model.position = { x: 0, y: 0, z: 0, ...(next.scene.model.position || {}) };
+  next.scene.model.rotation = { x: 0, y: 0, z: 0, ...(next.scene.model.rotation || {}) };
+  next.scene.model.animation = { clipName: '', play: true, loop: true, speed: 1, ...(next.scene.model.animation || {}) };
+  next.scene.guideOpacity = Number(next.scene.guideOpacity ?? 0.72);
+
+  const defaults = [
+    { id: 1, name: 'Enquadramento A', yaw: 0.7, pitch: 0.38, distance: 13.5, target: [0, 1.8, 0], fov: 42, guideUrl: '' },
+    { id: 2, name: 'Enquadramento B', yaw: -0.82, pitch: 0.3, distance: 14.8, target: [0, 1.7, 0], fov: 44, guideUrl: '' },
+    { id: 3, name: 'Enquadramento C', yaw: 0.16, pitch: 0.16, distance: 10.1, target: [0.15, 2, 0], fov: 38, guideUrl: '' },
+    { id: 4, name: 'Enquadramento D', yaw: 1.02, pitch: 0.72, distance: 16.2, target: [0, 1.25, 0], fov: 48, guideUrl: '' }
+  ];
+  const existing = Array.isArray(next.cameras) ? next.cameras : [];
+  next.cameras = defaults.map(base => {
+    const camera = existing.find(entry => Number(entry.id) === base.id) || {};
+    const merged = { ...base, ...camera };
+    merged.target = Array.isArray(camera.target) ? camera.target.map(Number) : [...base.target];
+    return merged;
+  });
+  return next;
+}
 
 function showToast(message = 'Projeto salvo') {
   const toast = $('saveToast');
   toast.textContent = message;
   toast.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
 }
 
 function setConnectionBadge(status) {
@@ -40,21 +99,21 @@ function queueSave(message) {
     } catch (error) {
       showToast(error.message);
     }
-  }, 300);
+  }, 320);
 }
 
 function selectedCamera() {
   return state.cameras.find(camera => camera.id === state.selectedCamera) || state.cameras[0];
 }
 
-function setNested(path, value) {
+function setNested(path, value, { save = true, render = true } = {}) {
   const parts = path.split('.');
   let target = state;
   for (let index = 0; index < parts.length - 1; index += 1) target = target[parts[index]];
   target[parts.at(-1)] = value;
-  renderer.setState(state);
+  if (render) renderer.setState(state);
   renderReadouts();
-  queueSave();
+  if (save) queueSave();
 }
 
 function escapeHtml(value) {
@@ -67,7 +126,7 @@ function renderCameraStrip() {
   state.cameras.forEach(camera => {
     const card = document.createElement('article');
     card.className = `camera-card${camera.id === state.activeCamera ? ' active' : ''}${camera.id === state.selectedCamera ? ' selected' : ''}`;
-    card.innerHTML = `<span class="camera-index">${camera.id}</span><h3>Câmera ${camera.id} — ${escapeHtml(camera.name)}</h3><p>FOV ${Math.round(camera.fov)}° · distância ${camera.distance.toFixed(1)}</p><button class="card-cut" type="button">CORTAR</button>`;
+    card.innerHTML = `<span class="camera-index">${camera.id}</span><h3>Câmera ${camera.id} — ${escapeHtml(camera.name)}</h3><p>FOV ${Number(camera.fov).toFixed(1)}° · distância ${Number(camera.distance).toFixed(2)}</p><button class="card-cut" type="button">CORTAR</button>`;
     card.addEventListener('click', event => {
       if (event.target.closest('.card-cut')) return;
       selectCamera(camera.id);
@@ -81,18 +140,23 @@ function renderCameraStrip() {
 }
 
 function selectCamera(id, persist = true) {
-  state.selectedCamera = id;
-  const camera = selectedCamera();
-  workingCamera = structuredClone(camera);
+  state.selectedCamera = Number(id);
+  workingCamera = structuredClone(selectedCamera());
   renderer.setCamera(workingCamera);
-  updateGuide(camera);
-  renderAll();
+  updateGuide(selectedCamera());
+  renderCameraStrip();
+  renderCameraControls();
+  renderReadouts();
+  updateCloudLinks();
   if (persist) queueSave();
 }
 
 async function cutCamera(id) {
-  try { await api(`/api/cut/${id}`, { method: 'POST', body: '{}' }); }
-  catch (error) { showToast(error.message); }
+  try {
+    await api(`/api/cut/${id}`, { method: 'POST', body: '{}' });
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 function updateGuide(camera) {
@@ -107,22 +171,48 @@ function updateGuide(camera) {
   }
 }
 
+function setCameraControl(id, value, suffix, digits = 1) {
+  $(id).value = value;
+  const numberField = $(`${id}Number`);
+  if (numberField) numberField.value = Number(value).toFixed(digits);
+  const output = $(`${id}Output`);
+  if (output) output.textContent = `${Number(value).toFixed(digits)}${suffix}`;
+}
+
 function renderCameraControls() {
   const camera = selectedCamera();
   if (!workingCamera || workingCamera.id !== camera.id) workingCamera = structuredClone(camera);
   suppressInputs = true;
   $('cameraName').value = camera.name;
-  $('cameraYaw').value = (workingCamera.yaw / Math.PI * 180).toFixed(1);
-  $('cameraPitch').value = (workingCamera.pitch / Math.PI * 180).toFixed(1);
-  $('cameraDistance').value = workingCamera.distance.toFixed(2);
-  $('cameraFov').value = workingCamera.fov.toFixed(1);
-  $('targetX').value = workingCamera.target[0].toFixed(2);
-  $('targetY').value = workingCamera.target[1].toFixed(2);
-  $('targetZ').value = workingCamera.target[2].toFixed(2);
+  setCameraControl('cameraYaw', workingCamera.yaw / DEG, '°', 1);
+  setCameraControl('cameraPitch', workingCamera.pitch / DEG, '°', 1);
+  setCameraControl('cameraDistance', workingCamera.distance, '', 2);
+  setCameraControl('cameraFov', workingCamera.fov, '°', 1);
+  setCameraControl('targetX', workingCamera.target[0], '', 2);
+  setCameraControl('targetY', workingCamera.target[1], '', 2);
+  setCameraControl('targetZ', workingCamera.target[2], '', 2);
   $('selectedCameraPill').textContent = `CAM ${camera.id}`;
   $('previewCameraName').textContent = `Câmera ${camera.id} — ${camera.name}`;
   $('guideOpacity').value = state.scene.guideOpacity;
   suppressInputs = false;
+}
+
+function cameraFromControls() {
+  return {
+    ...workingCamera,
+    yaw: Number($('cameraYaw').value) * DEG,
+    pitch: Number($('cameraPitch').value) * DEG,
+    distance: Number($('cameraDistance').value),
+    fov: Number($('cameraFov').value),
+    target: [Number($('targetX').value), Number($('targetY').value), Number($('targetZ').value)]
+  };
+}
+
+function updateWorkingCameraFromControls() {
+  if (suppressInputs) return;
+  workingCamera = cameraFromControls();
+  renderer.setCamera(workingCamera);
+  renderCameraControls();
 }
 
 function renderSceneControls() {
@@ -144,9 +234,14 @@ function renderSceneControls() {
   $('barGap').value = state.scene.bars.gap;
   $('imageScale').value = state.scene.bars.imageScale;
   $('labelScale').value = state.scene.bars.labelScale;
+  $('ambientLight').value = state.scene.lighting.ambient;
+  $('keyLight').value = state.scene.lighting.key;
+  $('shadowOpacity').value = state.scene.lighting.shadowOpacity;
   suppressInputs = false;
   renderReadouts();
   renderBarItems();
+  renderModelControls();
+  renderLights();
 }
 
 function renderReadouts() {
@@ -160,9 +255,12 @@ function renderReadouts() {
     ['barHeightOutput', Number(state.scene.bars.maxHeight).toFixed(1)],
     ['barGapOutput', Number(state.scene.bars.gap).toFixed(2)],
     ['imageScaleOutput', Number(state.scene.bars.imageScale).toFixed(2)],
-    ['labelScaleOutput', Number(state.scene.bars.labelScale).toFixed(2)]
+    ['labelScaleOutput', Number(state.scene.bars.labelScale).toFixed(2)],
+    ['ambientLightOutput', Number(state.scene.lighting.ambient).toFixed(2)],
+    ['keyLightOutput', Number(state.scene.lighting.key).toFixed(2)],
+    ['shadowOpacityOutput', Number(state.scene.lighting.shadowOpacity).toFixed(2)]
   ];
-  pairs.forEach(([id, value]) => $(id).textContent = value);
+  pairs.forEach(([id, value]) => { if ($(id)) $(id).textContent = value; });
   $('programCameraLabel').textContent = `CAM ${state.activeCamera}`;
   $('toggleOutputButton').textContent = state.outputVisible ? 'Ocultar gráfico' : 'Mostrar gráfico';
   document.querySelectorAll('.cut-button').forEach(button => button.classList.toggle('active', Number(button.dataset.cut) === state.activeCamera));
@@ -186,7 +284,9 @@ function renderBarItems() {
         renderer.setState(state);
         renderBarItems();
         queueSave('Imagem atualizada');
-      } catch (error) { showToast(error.message); }
+      } catch (error) {
+        showToast(error.message);
+      }
     });
     list.appendChild(row);
   });
@@ -198,6 +298,89 @@ function makeInitialSvg(item) {
   return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Ccircle cx='60' cy='60' r='56' fill='${color}'/%3E%3Ctext x='60' y='75' text-anchor='middle' font-family='Arial' font-size='52' font-weight='700' fill='white'%3E${text}%3C/text%3E%3C/svg%3E`;
 }
 
+function renderModelControls() {
+  const model = state.scene.model;
+  suppressInputs = true;
+  $('modelVisible').checked = Boolean(model.visible);
+  $('modelFileName').textContent = model.name || 'Nenhum modelo carregado';
+  $('modelFormatPill').textContent = model.format ? model.format.toUpperCase() : 'VAZIO';
+
+  const controls = [
+    ['modelX', model.position.x, '', 2], ['modelY', model.position.y, '', 2], ['modelZ', model.position.z, '', 2],
+    ['modelRotationX', model.rotation.x, '°', 1], ['modelRotationY', model.rotation.y, '°', 1], ['modelRotationZ', model.rotation.z, '°', 1],
+    ['modelScale', model.scale, '', 2], ['modelAnimationSpeed', model.animation.speed, '×', 2]
+  ];
+  controls.forEach(([id, value, suffix, digits]) => {
+    $(id).value = value;
+    $(`${id}Output`).textContent = `${Number(value).toFixed(digits)}${suffix}`;
+  });
+  $('modelAnimationPlay').checked = model.animation.play !== false;
+  $('modelAnimationLoop').checked = model.animation.loop !== false;
+
+  const select = $('modelAnimationClip');
+  select.innerHTML = '';
+  if (!availableAnimations.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = model.format === 'obj' ? 'OBJ não possui animações' : 'Nenhuma animação encontrada';
+    select.appendChild(option);
+    select.disabled = true;
+  } else {
+    select.disabled = false;
+    availableAnimations.forEach((name, index) => {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = `${index + 1}. ${name || `Animação ${index + 1}`}`;
+      select.appendChild(option);
+    });
+    select.value = availableAnimations.includes(model.animation.clipName) ? model.animation.clipName : availableAnimations[0];
+  }
+  $('animationCount').textContent = `${availableAnimations.length} ${availableAnimations.length === 1 ? 'CLIPE' : 'CLIPES'}`;
+  suppressInputs = false;
+}
+
+function renderLights() {
+  const list = $('lightList');
+  list.innerHTML = '';
+  state.scene.lights.forEach((light, index) => {
+    const card = document.createElement('article');
+    card.className = 'light-card';
+    card.innerHTML = `
+      <div class="light-card-head">
+        <label class="switch-row"><input data-light-field="enabled" type="checkbox" ${light.enabled !== false ? 'checked' : ''}><span>${escapeHtml(light.name || `Luz ${index + 1}`)}</span></label>
+        <button class="icon-button danger-text" data-remove-light type="button" title="Remover luz">×</button>
+      </div>
+      <div class="light-inline"><label>Cor<input data-light-field="color" type="color" value="${light.color || '#ffffff'}"></label><label>Nome<input data-light-field="name" type="text" value="${escapeHtml(light.name || `Luz ${index + 1}`)}"></label></div>
+      ${lightRange('Intensidade', 'intensity', light.intensity, 0, 10, 0.05, 2)}
+      ${lightRange('Alcance', 'distance', light.distance, 1, 50, 0.1, 1)}
+      ${lightRange('Posição X', 'x', light.x, -20, 20, 0.05, 2)}
+      ${lightRange('Posição Y', 'y', light.y, 0, 20, 0.05, 2)}
+      ${lightRange('Posição Z', 'z', light.z, -20, 20, 0.05, 2)}
+    `;
+    card.querySelectorAll('[data-light-field]').forEach(input => input.addEventListener('input', event => {
+      const field = event.target.dataset.lightField;
+      const value = event.target.type === 'checkbox' ? event.target.checked : event.target.type === 'color' || event.target.type === 'text' ? event.target.value : Number(event.target.value);
+      light[field] = value;
+      const output = card.querySelector(`[data-light-output="${field}"]`);
+      if (output) output.textContent = Number(value).toFixed(field === 'distance' ? 1 : 2);
+      renderer.setState(state);
+      queueSave();
+    }));
+    card.querySelector('[data-remove-light]').addEventListener('click', () => {
+      state.scene.lights.splice(index, 1);
+      renderer.setState(state);
+      renderLights();
+      queueSave('Luz removida');
+    });
+    list.appendChild(card);
+  });
+  $('addLightButton').disabled = state.scene.lights.length >= 8;
+}
+
+function lightRange(label, field, value, min, max, step, digits) {
+  return `<label class="range-field compact">${label}<output data-light-output="${field}">${Number(value).toFixed(digits)}</output><input data-light-field="${field}" type="range" min="${min}" max="${max}" step="${step}" value="${Number(value)}"></label>`;
+}
+
 function renderAll() {
   renderCameraStrip();
   renderCameraControls();
@@ -207,10 +390,14 @@ function renderAll() {
 }
 
 async function uploadFile(file) {
-  if (file.size > 12 * 1024 * 1024) throw new Error('Arquivo maior que 12 MB.');
+  const maxBytes = 48 * 1024 * 1024;
+  if (file.size > maxBytes) throw new Error('Arquivo maior que 48 MB. Otimize o modelo antes do upload.');
   const dataUrl = await new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      resolve(result.startsWith('data:;base64,') ? result.replace('data:;base64,', 'data:application/octet-stream;base64,') : result);
+    };
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
@@ -227,76 +414,83 @@ function bindTabs() {
 
 function bindSceneInputs() {
   const inputs = [
-    ['projectName', 'projectName', 'string'], ['anchorX', 'scene.anchor.x', 'number'], ['anchorZ', 'scene.anchor.z', 'number'], ['anchorRotation', 'scene.anchor.rotationY', 'number'], ['anchorScale', 'scene.anchor.scale', 'number'], ['anchorLocked', 'scene.anchor.locked', 'checked'],
+    ['projectName', 'projectName', 'string'],
+    ['anchorX', 'scene.anchor.x', 'number'], ['anchorZ', 'scene.anchor.z', 'number'], ['anchorRotation', 'scene.anchor.rotationY', 'number'], ['anchorScale', 'scene.anchor.scale', 'number'], ['anchorLocked', 'scene.anchor.locked', 'checked'],
     ['baseThickness', 'scene.base.thickness', 'number'], ['baseScale', 'scene.base.scale', 'number'], ['alphaThreshold', 'scene.base.alphaThreshold', 'number'], ['baseColor', 'scene.base.color', 'string'],
-    ['barWidth', 'scene.bars.width', 'number'], ['barDepth', 'scene.bars.depth', 'number'], ['barHeight', 'scene.bars.maxHeight', 'number'], ['barGap', 'scene.bars.gap', 'number'], ['imageScale', 'scene.bars.imageScale', 'number'], ['labelScale', 'scene.bars.labelScale', 'number'], ['guideOpacity', 'scene.guideOpacity', 'number']
+    ['barWidth', 'scene.bars.width', 'number'], ['barDepth', 'scene.bars.depth', 'number'], ['barHeight', 'scene.bars.maxHeight', 'number'], ['barGap', 'scene.bars.gap', 'number'], ['imageScale', 'scene.bars.imageScale', 'number'], ['labelScale', 'scene.bars.labelScale', 'number'],
+    ['guideOpacity', 'scene.guideOpacity', 'number'],
+    ['ambientLight', 'scene.lighting.ambient', 'number'], ['keyLight', 'scene.lighting.key', 'number'], ['shadowOpacity', 'scene.lighting.shadowOpacity', 'number'],
+    ['modelVisible', 'scene.model.visible', 'checked'],
+    ['modelX', 'scene.model.position.x', 'number'], ['modelY', 'scene.model.position.y', 'number'], ['modelZ', 'scene.model.position.z', 'number'],
+    ['modelRotationX', 'scene.model.rotation.x', 'number'], ['modelRotationY', 'scene.model.rotation.y', 'number'], ['modelRotationZ', 'scene.model.rotation.z', 'number'], ['modelScale', 'scene.model.scale', 'number'],
+    ['modelAnimationPlay', 'scene.model.animation.play', 'checked'], ['modelAnimationLoop', 'scene.model.animation.loop', 'checked'], ['modelAnimationSpeed', 'scene.model.animation.speed', 'number']
   ];
   inputs.forEach(([id, path, type]) => $(id).addEventListener('input', event => {
     if (suppressInputs) return;
     const value = type === 'number' ? Number(event.target.value) : type === 'checked' ? event.target.checked : event.target.value;
     setNested(path, value);
     if (id === 'guideOpacity') updateGuide(selectedCamera());
+    if (id.startsWith('model')) renderModelControls();
   }));
-}
 
-function updateWorkingCameraFromFields() {
-  if (suppressInputs || !workingCamera) return;
-  workingCamera.yaw = Number($('cameraYaw').value) * Math.PI / 180;
-  workingCamera.pitch = Number($('cameraPitch').value) * Math.PI / 180;
-  workingCamera.distance = Number($('cameraDistance').value);
-  workingCamera.fov = Number($('cameraFov').value);
-  workingCamera.target = [Number($('targetX').value), Number($('targetY').value), Number($('targetZ').value)];
-  renderer.setCamera(workingCamera);
-}
-
-function bindCameraInputs() {
-  ['cameraYaw', 'cameraPitch', 'cameraDistance', 'cameraFov', 'targetX', 'targetY', 'targetZ'].forEach(id => $(id).addEventListener('input', updateWorkingCameraFromFields));
-  $('cameraName').addEventListener('input', () => {
-    selectedCamera().name = $('cameraName').value;
-    renderCameraStrip();
-    queueSave();
+  $('modelAnimationClip').addEventListener('change', event => {
+    if (suppressInputs) return;
+    state.scene.model.animation.clipName = event.target.value;
+    renderer.setState(state);
+    queueSave('Animação selecionada');
   });
+}
+
+function bindCameraControls() {
+  ['cameraYaw', 'cameraPitch', 'cameraDistance', 'cameraFov', 'targetX', 'targetY', 'targetZ'].forEach(id => $(id).addEventListener('input', updateWorkingCameraFromControls));
+
+  const numberPairs = [
+    ['cameraYawNumber', 'cameraYaw'], ['cameraPitchNumber', 'cameraPitch'], ['cameraDistanceNumber', 'cameraDistance'], ['cameraFovNumber', 'cameraFov']
+  ];
+  numberPairs.forEach(([numberId, rangeId]) => $(numberId).addEventListener('input', event => {
+    if (suppressInputs) return;
+    $(rangeId).value = event.target.value;
+    updateWorkingCameraFromControls();
+  }));
+
+  $('previewCanvas').addEventListener('camera-change', event => {
+    if (!workingCamera) return;
+    workingCamera = { ...workingCamera, ...event.detail, id: selectedCamera().id, name: selectedCamera().name, guideUrl: selectedCamera().guideUrl };
+    renderCameraControls();
+  });
+
   $('saveCameraButton').addEventListener('click', () => {
     const camera = selectedCamera();
     const snapshot = renderer.getCameraSnapshot();
-    Object.assign(camera, snapshot, { name: $('cameraName').value });
+    Object.assign(camera, snapshot, { name: $('cameraName').value.trim() || camera.name });
     workingCamera = structuredClone(camera);
-    renderAll();
-    queueSave(`Câmera ${camera.id} salva`);
-  });
-  $('resetViewButton').addEventListener('click', () => selectCamera(state.selectedCamera, false));
-  renderer.canvas.addEventListener('camera-change', event => {
-    workingCamera = { ...workingCamera, ...event.detail, id: state.selectedCamera, name: selectedCamera().name };
+    renderCameraStrip();
     renderCameraControls();
+    queueSave(`Preset da câmera ${camera.id} salvo`);
   });
+
+  $('resetViewButton').addEventListener('click', () => selectCamera(state.selectedCamera, false));
 }
 
 function parseCsv(text) {
-  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter(line => line.trim());
-  if (lines.length < 2) throw new Error('CSV sem linhas de dados.');
-  const delimiter = (lines[0].match(/;/g) || []).length > (lines[0].match(/,/g) || []).length ? ';' : ',';
-  const headers = lines[0].split(delimiter).map(header => header.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
-  const nameIndex = Math.max(0, headers.findIndex(header => ['nome', 'name', 'categoria', 'candidato'].includes(header)));
-  const valueIndex = headers.findIndex(header => ['valor', 'value', 'percentual', 'porcentagem', 'votos'].includes(header));
-  const colorIndex = headers.findIndex(header => ['cor', 'color'].includes(header));
-  if (valueIndex < 0) throw new Error('Inclua uma coluna valor.');
-  const palette = ['#3567d7', '#10a9a6', '#7650a8', '#e9781b', '#d34b63', '#44a96c', '#c9a431', '#4f75a8'];
+  const lines = String(text).replace(/^\uFEFF/, '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  if (lines.length < 2) throw new Error('O CSV precisa ter cabeçalho e pelo menos uma linha.');
+  const delimiter = lines[0].includes(';') ? ';' : ',';
+  const headers = lines[0].split(delimiter).map(value => value.trim().toLowerCase());
+  const nameIndex = headers.findIndex(value => ['nome', 'name', 'item'].includes(value));
+  const valueIndex = headers.findIndex(value => ['valor', 'value', 'total'].includes(value));
+  const colorIndex = headers.findIndex(value => ['cor', 'color'].includes(value));
+  if (nameIndex < 0 || valueIndex < 0) throw new Error('Use as colunas nome e valor.');
   return lines.slice(1).map((line, index) => {
-    const columns = line.split(delimiter).map(value => value.trim().replace(/^"|"$/g, ''));
+    const columns = line.split(delimiter).map(value => value.trim());
     const name = columns[nameIndex] || `Item ${index + 1}`;
-    const value = Number(String(columns[valueIndex] || '0').replace(/\./g, '').replace(',', '.')) || 0;
-    const existing = state.scene.items.find(item => item.name.toLowerCase() === name.toLowerCase());
-    return {
-      id: existing?.id || `${Date.now()}-${index}`,
-      name,
-      value,
-      color: columns[colorIndex] || existing?.color || palette[index % palette.length],
-      imageUrl: existing?.imageUrl || ''
-    };
-  }).slice(0, 12);
+    const value = Number(String(columns[valueIndex] || '0').replace(',', '.')) || 0;
+    const color = /^#[0-9a-f]{6}$/i.test(columns[colorIndex] || '') ? columns[colorIndex] : ['#3567d7', '#10a9a6', '#7650a8', '#e9781b'][index % 4];
+    return { id: `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${index}`, name, value, color, imageUrl: '' };
+  }).slice(0, 16);
 }
 
-function bindFiles() {
+function bindUploads() {
   $('csvInput').addEventListener('change', async () => {
     try {
       const file = $('csvInput').files[0];
@@ -305,8 +499,11 @@ function bindFiles() {
       renderer.setState(state);
       renderAll();
       queueSave('CSV importado');
-    } catch (error) { showToast(error.message); }
+    } catch (error) {
+      showToast(error.message);
+    }
   });
+
   $('baseInput').addEventListener('change', async () => {
     const file = $('baseInput').files[0];
     if (!file) return;
@@ -314,8 +511,11 @@ function bindFiles() {
       state.scene.base.imageUrl = await uploadFile(file);
       renderer.setState(state);
       queueSave('Base PNG atualizada');
-    } catch (error) { showToast(error.message); }
+    } catch (error) {
+      showToast(error.message);
+    }
   });
+
   $('guideInput').addEventListener('change', async () => {
     const file = $('guideInput').files[0];
     if (!file) return;
@@ -323,12 +523,48 @@ function bindFiles() {
       selectedCamera().guideUrl = await uploadFile(file);
       updateGuide(selectedCamera());
       queueSave('Guia salvo');
-    } catch (error) { showToast(error.message); }
+    } catch (error) {
+      showToast(error.message);
+    }
   });
+
+  $('modelInput').addEventListener('change', async () => {
+    const file = $('modelInput').files[0];
+    if (!file) return;
+    const extension = file.name.split('.').pop().toLowerCase();
+    if (!['glb', 'obj'].includes(extension)) return showToast('Use um arquivo GLB ou OBJ.');
+    try {
+      showToast(`Enviando ${file.name}…`);
+      state.scene.model.url = await uploadFile(file);
+      state.scene.model.name = file.name;
+      state.scene.model.format = extension;
+      state.scene.model.visible = true;
+      state.scene.model.animation.clipName = '';
+      availableAnimations = [];
+      renderer.setState(state);
+      renderModelControls();
+      queueSave('Modelo 3D importado');
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+
   $('removeGuideButton').addEventListener('click', () => {
     selectedCamera().guideUrl = '';
     updateGuide(selectedCamera());
     queueSave('Guia removido');
+  });
+
+  $('removeModelButton').addEventListener('click', () => {
+    state.scene.model = {
+      url: '', name: '', format: '', visible: true,
+      position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: 1,
+      animation: { clipName: '', play: true, loop: true, speed: 1 }
+    };
+    availableAnimations = [];
+    renderer.setState(state);
+    renderModelControls();
+    queueSave('Modelo removido');
   });
 }
 
@@ -342,22 +578,57 @@ function download(name, content, type = 'application/json') {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+async function copyText(text, message = 'Link copiado') {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(message);
+  } catch {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
+    showToast(message);
+  }
+}
+
 function updateCloudLinks() {
   const room = getRoom();
   $('programUrl').value = programUrl(room);
-  for (let id = 1; id <= 4; id += 1) {
-    const element = $(`cutEndpoint${id}`);
-    if (element) element.textContent = controlUrl(`/api/cut/${id}`, room);
-  }
-  $('toggleEndpoint').textContent = controlUrl('/api/output/toggle', room);
+  $('toggleEndpoint').value = controlUrl('/api/output/toggle', room);
   $('roomInput').value = room;
   $('tokenInput').value = getToken();
   $('roomBadge').textContent = `SALA ${room.toUpperCase()}`;
+
+  const container = $('streamDeckLinks');
+  container.innerHTML = '';
+  for (let id = 1; id <= 4; id += 1) {
+    const cut = controlUrl(`/api/cut/${id}`, room);
+    const virtual = fixedProgramUrl(id, room);
+    const camera = state?.cameras?.find(entry => entry.id === id);
+    const card = document.createElement('article');
+    card.className = 'streamdeck-card';
+    card.innerHTML = `
+      <div class="streamdeck-card-head"><strong>CAM ${id}</strong><span>${escapeHtml(camera?.name || `Enquadramento ${id}`)}</span></div>
+      <label>Link de corte para Stream Deck<input data-cut-link type="text" readonly value="${escapeHtml(cut)}"></label>
+      <div class="button-row"><button class="button primary mini" data-copy-cut type="button">Copiar corte</button><button class="button secondary mini" data-test-cut type="button">Testar</button></div>
+      <label>Link da câmera virtual fixa<input data-camera-link type="text" readonly value="${escapeHtml(virtual)}"></label>
+      <div class="button-row"><button class="button secondary mini" data-copy-camera type="button">Copiar câmera</button><button class="button secondary mini" data-open-camera type="button">Abrir</button></div>
+    `;
+    card.querySelector('[data-copy-cut]').addEventListener('click', () => copyText(cut, `Link de corte CAM ${id} copiado`));
+    card.querySelector('[data-test-cut]').addEventListener('click', () => cutCamera(id));
+    card.querySelector('[data-copy-camera]').addEventListener('click', () => copyText(virtual, `Link virtual CAM ${id} copiado`));
+    card.querySelector('[data-open-camera]').addEventListener('click', () => window.open(virtual, `broadcast3d-camera-${id}`));
+    container.appendChild(card);
+  }
 }
 
 async function loadRoom() {
   const data = await api('/api/state');
-  state = data.state;
+  state = normalizeState(data.state);
   renderer.setState(state);
   workingCamera = structuredClone(selectedCamera());
   renderer.setCamera(workingCamera);
@@ -372,38 +643,62 @@ function bindCloudControls() {
     try {
       await loadRoom();
       showToast(`Sala ${room} conectada`);
-    } catch (error) { showToast(error.message); }
+    } catch (error) {
+      showToast(error.message);
+    }
   });
 }
 
 function bindActions() {
   document.querySelectorAll('[data-cut]').forEach(button => button.addEventListener('click', () => cutCamera(Number(button.dataset.cut))));
-  document.querySelectorAll('[data-api-cut]').forEach(button => button.addEventListener('click', () => cutCamera(Number(button.dataset.apiCut))));
   $('toggleOutputButton').addEventListener('click', async () => {
-    try { await api('/api/output/toggle', { method: 'POST', body: '{}' }); }
-    catch (error) { showToast(error.message); }
+    try {
+      await api('/api/output/toggle', { method: 'POST', body: '{}' });
+    } catch (error) {
+      showToast(error.message);
+    }
   });
   $('openProgramButton').addEventListener('click', () => window.open(programUrl(), 'broadcast3d-program'));
-  $('copyProgramUrlButton').addEventListener('click', () => {
-    $('programUrl').focus();
-    $('programUrl').select();
-    showToast('Link selecionado');
+  $('openProgramUrlButton').addEventListener('click', () => window.open(programUrl(), 'broadcast3d-program'));
+  $('copyProgramUrlButton').addEventListener('click', () => copyText(programUrl(), 'Link do overlay copiado'));
+  $('copyToggleEndpointButton').addEventListener('click', () => copyText(controlUrl('/api/output/toggle'), 'Link de exibir/ocultar copiado'));
+  $('copyAllStreamDeckButton').addEventListener('click', () => {
+    const lines = [];
+    for (let id = 1; id <= 4; id += 1) {
+      lines.push(`CAM ${id} - CORTE: ${controlUrl(`/api/cut/${id}`)}`);
+      lines.push(`CAM ${id} - VIRTUAL: ${fixedProgramUrl(id)}`);
+    }
+    lines.push(`OVERLAY DINÂMICO: ${programUrl()}`);
+    lines.push(`EXIBIR/OCULTAR: ${controlUrl('/api/output/toggle')}`);
+    copyText(lines.join('\n'), 'Todos os links foram copiados');
   });
+
   $('exportProjectButton').addEventListener('click', () => download(`${(state.projectName || 'projeto').replace(/[^a-z0-9_-]/gi, '_')}.json`, JSON.stringify(state, null, 2)));
   $('importProjectButton').addEventListener('click', () => $('importProjectInput').click());
   $('importProjectInput').addEventListener('change', async () => {
     try {
-      const next = JSON.parse(await $('importProjectInput').files[0].text());
+      const next = normalizeState(JSON.parse(await $('importProjectInput').files[0].text()));
       state = next;
+      availableAnimations = [];
       renderer.setState(state);
       selectCamera(state.selectedCamera || 1, false);
       renderAll();
       queueSave('Projeto importado');
-    } catch { showToast('Projeto inválido'); }
+    } catch {
+      showToast('Projeto inválido');
+    }
   });
   $('downloadCsvButton').addEventListener('click', () => download('exemplo-grafico.csv', 'nome;valor;cor\nIndústria;128;#3567d7\nVarejo;198;#10a9a6\nServiços;256;#7650a8\nTecnologia;312;#e9781b', 'text/csv'));
+  $('addLightButton').addEventListener('click', () => {
+    if (state.scene.lights.length >= 8) return;
+    state.scene.lights.push(defaultLight(state.scene.lights.length + 1));
+    renderer.setState(state);
+    renderLights();
+    queueSave('Ponto de luz adicionado');
+  });
+
   window.addEventListener('keydown', event => {
-    if (!['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName) && ['1', '2', '3', '4'].includes(event.key)) cutCamera(Number(event.key));
+    if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) && ['1', '2', '3', '4'].includes(event.key)) cutCamera(Number(event.key));
   });
 }
 
@@ -414,7 +709,7 @@ function connectEvents() {
     onStatus: setConnectionBadge,
     onMessage(payload) {
       if (!payload?.state) return;
-      state = payload.state;
+      state = normalizeState(payload.state);
       renderer.setState(state);
       if (payload.type === 'cut') selectCamera(state.activeCamera, false);
       else renderAll();
@@ -426,15 +721,23 @@ async function init() {
   $('roomInput').value = getRoom();
   $('tokenInput').value = getToken();
   renderer = new BroadcastRenderer($('previewCanvas'), { interactive: true });
+  $('previewCanvas').addEventListener('model-info', event => {
+    availableAnimations = event.detail.animations || [];
+    renderModelControls();
+  });
+  $('previewCanvas').addEventListener('model-error', event => showToast(event.detail.message));
   bindTabs();
   bindSceneInputs();
-  bindCameraInputs();
-  bindFiles();
-  bindActions();
+  bindCameraControls();
+  bindUploads();
   bindCloudControls();
-  await loadRoom();
+  bindActions();
+  try {
+    await loadRoom();
+  } catch (error) {
+    setConnectionBadge('error');
+    showToast(error.message);
+  }
 }
 
-init().catch(error => {
-  document.body.innerHTML = `<pre style="padding:24px;color:white;white-space:pre-wrap">${escapeHtml(error.stack || error.message)}</pre>`;
-});
+init();

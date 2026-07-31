@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 
 const MAX_STATE_BYTES = 1_800_000;
-const MAX_MEDIA_BYTES = 12 * 1024 * 1024;
+const MAX_MEDIA_BYTES = 48 * 1024 * 1024;
 const MEDIA_CHUNK_BYTES = 1_250_000;
 
 function json(data, status = 200, extraHeaders = {}) {
@@ -17,7 +17,7 @@ function json(data, status = 200, extraHeaders = {}) {
 
 function defaultState() {
   return {
-    version: 2,
+    version: 3,
     projectName: 'Projeto 3D - Eleições',
     activeCamera: 1,
     selectedCamera: 1,
@@ -45,7 +45,18 @@ function defaultState() {
         { id: 'servicos', name: 'Serviços', value: 256, color: '#7650a8', imageUrl: '' },
         { id: 'tecnologia', name: 'Tecnologia', value: 312, color: '#e9781b', imageUrl: '' }
       ],
-      lighting: { ambient: 0.58, key: 1.15 },
+      lighting: { ambient: 0.58, key: 1.15, shadowOpacity: 0.28 },
+      lights: [
+        { id: 'light-key-left', name: 'Luz lateral', enabled: true, color: '#ffffff', intensity: 2.2, distance: 18, x: -4, y: 5, z: 4 },
+        { id: 'light-fill-right', name: 'Preenchimento', enabled: true, color: '#6fa8ff', intensity: 1.4, distance: 18, x: 4, y: 5, z: -2 }
+      ],
+      model: {
+        url: '', name: '', format: '', visible: true,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: 1,
+        animation: { clipName: '', play: true, loop: true, speed: 1 }
+      },
       guideOpacity: 0.72
     },
     cameras: [
@@ -55,6 +66,34 @@ function defaultState() {
       { id: 4, name: 'Enquadramento D', yaw: 1.02, pitch: 0.72, distance: 16.2, target: [0, 1.25, 0], fov: 48, guideUrl: '' }
     ]
   };
+}
+
+function normalizeState(input) {
+  const defaults = defaultState();
+  const state = structuredClone(input && typeof input === 'object' ? input : defaults);
+  state.version = 3;
+  state.projectName ||= defaults.projectName;
+  state.activeCamera = Number(state.activeCamera || 1);
+  state.selectedCamera = Number(state.selectedCamera || state.activeCamera || 1);
+  state.outputVisible = state.outputVisible !== false;
+  state.scene ||= {};
+  state.scene.anchor = { ...defaults.scene.anchor, ...(state.scene.anchor || {}) };
+  state.scene.base = { ...defaults.scene.base, ...(state.scene.base || {}) };
+  state.scene.bars = { ...defaults.scene.bars, ...(state.scene.bars || {}) };
+  state.scene.items = Array.isArray(state.scene.items) ? state.scene.items : structuredClone(defaults.scene.items);
+  state.scene.lighting = { ...defaults.scene.lighting, ...(state.scene.lighting || {}) };
+  state.scene.lights = Array.isArray(state.scene.lights) ? state.scene.lights : structuredClone(defaults.scene.lights);
+  state.scene.model = { ...defaults.scene.model, ...(state.scene.model || {}) };
+  state.scene.model.position = { ...defaults.scene.model.position, ...(state.scene.model.position || {}) };
+  state.scene.model.rotation = { ...defaults.scene.model.rotation, ...(state.scene.model.rotation || {}) };
+  state.scene.model.animation = { ...defaults.scene.model.animation, ...(state.scene.model.animation || {}) };
+  state.scene.guideOpacity = Number(state.scene.guideOpacity ?? defaults.scene.guideOpacity);
+  const cameras = Array.isArray(state.cameras) ? state.cameras : [];
+  state.cameras = defaults.cameras.map(base => {
+    const current = cameras.find(camera => Number(camera.id) === base.id) || {};
+    return { ...base, ...current, target: Array.isArray(current.target) ? current.target.map(Number) : [...base.target] };
+  });
+  return state;
 }
 
 function sanitizeRoom(value) {
@@ -122,7 +161,11 @@ export class BroadcastRoom extends DurableObject {
 
   async getState() {
     const stored = await this.ctx.storage.get('state');
-    if (stored && typeof stored === 'object') return stored;
+    if (stored && typeof stored === 'object') {
+      const normalized = normalizeState(stored);
+      if (JSON.stringify(normalized) !== JSON.stringify(stored)) await this.ctx.storage.put('state', normalized);
+      return normalized;
+    }
     const initial = defaultState();
     await this.ctx.storage.put('state', initial);
     return initial;
@@ -168,7 +211,7 @@ export class BroadcastRoom extends DurableObject {
       try {
         const state = await request.json();
         if (!state || typeof state !== 'object' || Array.isArray(state)) throw new Error('Estado inválido.');
-        await this.saveState(state, 'state');
+        await this.saveState(normalizeState(state), 'state');
         return json({ ok: true });
       } catch (error) {
         return json({ ok: false, error: error.message || 'Estado inválido.' }, 400);
@@ -196,10 +239,10 @@ export class BroadcastRoom extends DurableObject {
     if (pathname === '/api/upload' && request.method === 'POST') {
       try {
         const body = await request.json();
-        const match = String(body.dataUrl || '').match(/^data:([^;]+);base64,(.+)$/s);
+        const match = String(body.dataUrl || '').match(/^data:([^;]*);base64,(.+)$/s);
         if (!match) throw new Error('Arquivo inválido.');
         const bytes = decodeBase64(match[2]);
-        if (bytes.byteLength > MAX_MEDIA_BYTES) throw new Error('Arquivo maior que 12 MB.');
+        if (bytes.byteLength > MAX_MEDIA_BYTES) throw new Error('Arquivo maior que 48 MB.');
         const assetId = crypto.randomUUID();
         const chunks = Math.ceil(bytes.byteLength / MEDIA_CHUNK_BYTES);
         for (let index = 0; index < chunks; index += 1) {

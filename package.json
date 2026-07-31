@@ -1,8 +1,8 @@
 {
   "name": "broadcast3d-cloudflare-webapp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "Webapp de gráficos 3D transparentes para overlay no vMix, com quatro perspectivas, GitHub e Cloudflare Workers.",
+  "description": "Webapp de gráficos 3D transparentes para vMix com quatro câmeras virtuais, GLB animado/OBJ, iluminação, Stream Deck, GitHub e Cloudflare Workers.",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
