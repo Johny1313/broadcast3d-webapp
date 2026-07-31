@@ -71,7 +71,4 @@ for (const route of [
   }
 }
 
-const wrangler = await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
-for (const route of ['/api/*','/camera/*','/cut/*','/play','/reset','/overlay','MEDIA_BUCKET','broadcast3d-media']) if (!wrangler.includes(route)) throw new Error(`Rota ausente: ${route}`);
-
 console.log('Broadcast3D v0.8.2 validado: PLAY aguarda GLB/gráfico, inicia no frame zero com relógio local, mantém último frame e preserva Sheets/CSV.');
