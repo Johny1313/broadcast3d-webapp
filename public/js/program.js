@@ -1,5 +1,5 @@
-import { BroadcastRenderer } from './renderer3d.js?v=0.8.0';
-import { api, connectSocket, getRoom } from './cloud.js?v=0.8.0';
+import { BroadcastRenderer } from './renderer3d.js?v=0.8.2';
+import { api, connectSocket, getRoom } from './cloud.js?v=0.8.2';
 
 const canvas = document.getElementById('programCanvas');
 const renderer = new BroadcastRenderer(canvas, { interactive: false });
@@ -71,10 +71,24 @@ canvas.addEventListener('model-error', event => {
   showDebug(`ERRO GLB: ${event.detail?.message || 'falha desconhecida'}`, true);
 });
 
+canvas.addEventListener('playback-waiting', event => {
+  const detail = event.detail || {};
+  const missing = [];
+  if (!detail.modelReady) missing.push('GLB');
+  if (!detail.graphReady) missing.push('gráfico');
+  showDebug(missing.length ? `PLAY recebido · aguardando ${missing.join(' + ')}` : 'PLAY recebido…');
+});
+canvas.addEventListener('playback-started', () => {
+  showDebug(`PLAY NO AR · sala ${getRoom()} · CAM ${activeCamera()?.id || 1}`);
+});
+canvas.addEventListener('playback-prepared', () => {
+  showDebug(`PREPARADO · sala ${getRoom()} · CAM ${activeCamera()?.id || 1}`);
+});
+
 function apply(nextState) {
   state = normalizeState(nextState);
   if (forcePreview) {
-    state.scene.playback.mode = 'preview';
+    state.scene.playback.mode = 'final-preview';
     state.scene.playback.startedAt = 0;
   }
   renderer.setState(state);

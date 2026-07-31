@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Broadcast3D Cloud v0.8.0</title>
-  <link rel="stylesheet" href="/styles.css?v=0.8.0">
+  <title>Broadcast3D Cloud v0.8.2</title>
+  <link rel="stylesheet" href="/styles.css?v=0.8.2">
   <script type="importmap">
   {
     "imports": {
@@ -19,7 +19,7 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark">3D</div>
-        <div><strong>Broadcast3D Cloud <small class="version-badge">v0.8.0</small></strong><span>PLAY único para GLB + gráfico do Google Sheets · overlay transparente para vMix</span></div>
+        <div><strong>Broadcast3D Cloud <small class="version-badge">v0.8.2</small></strong><span>PLAY único para GLB + gráfico do Google Sheets · overlay transparente para vMix</span></div>
       </div>
       <div class="top-actions cloud-top-actions">
         <span id="connectionBadge" class="status-badge">Conectando</span>
@@ -57,7 +57,8 @@
 
         <section class="panel-section sheets-spotlight">
           <div class="section-title"><span>Dados ao vivo</span><span id="sheetStatusPill" class="pill">GOOGLE SHEETS</span></div>
-          <label class="field">Link público da planilha<input id="sheetUrlQuick" type="url" placeholder="https://docs.google.com/spreadsheets/d/..."></label>
+          <label class="switch-row prominent-switch"><input id="sheetDataEnabledQuick" type="checkbox"><span>Habilitar dados do Sheets / CSV</span></label>
+          <label class="field">Link público da planilha<input id="sheetUrlQuick" type="url" value="https://docs.google.com/spreadsheets/d/1XiDEtcuOuW1jfj8jX1JHxFgsbtbABAgTZuhZIYsWI6w/edit?usp=sharing" placeholder="https://docs.google.com/spreadsheets/d/..."></label>
           <div class="button-row">
             <button id="connectSheetQuickButton" class="button primary" type="button">Conectar</button>
             <button id="openSheetControlsButton" class="button secondary" type="button">Configurar</button>
@@ -207,8 +208,9 @@
 
         <section class="tab-panel" data-panel="sheets">
           <div class="section-title"><span>Google Sheets</span><span id="sheetConnectionPill" class="pill">DESCONECTADO</span></div>
-          <p class="helper strong">A planilha precisa estar compartilhada como “qualquer pessoa com o link pode ver”. Não é necessário publicar CSV.</p>
-          <label class="field">Link da planilha<input id="sheetUrl" type="url" placeholder="https://docs.google.com/spreadsheets/d/..."></label>
+          <label class="switch-row prominent-switch"><input id="sheetDataEnabled" type="checkbox"><span>Habilitar leitura e exibição dos dados do Sheets / CSV</span></label>
+          <p class="helper strong">Quando desabilitado, a leitura automática para e o gráfico gerado é ocultado, mas os últimos dados permanecem salvos. A planilha precisa estar compartilhada como “qualquer pessoa com o link pode ver”.</p>
+          <label class="field">Link da planilha<input id="sheetUrl" type="url" value="https://docs.google.com/spreadsheets/d/1XiDEtcuOuW1jfj8jX1JHxFgsbtbABAgTZuhZIYsWI6w/edit?usp=sharing" placeholder="https://docs.google.com/spreadsheets/d/..."></label>
           <div class="form-grid two">
             <label class="field">GID da aba<input id="sheetGid" type="text" inputmode="numeric" value="0"></label>
             <label class="field">Atualizar a cada (s)<input id="sheetRefreshSeconds" type="number" min="3" max="3600" step="1"></label>
@@ -231,8 +233,9 @@
               <label class="field">Valor<input id="sheetValueColumn" type="text" maxlength="3" value="B" placeholder="B"></label>
               <label class="field">Cor<input id="sheetColorColumn" type="text" maxlength="3" value="C" placeholder="C"></label>
               <label class="field">Imagem<input id="sheetImageColumn" type="text" maxlength="3" value="D" placeholder="D"></label>
+              <label class="field">Índice / escala<input id="sheetScaleColumn" type="text" maxlength="3" value="B" placeholder="B"></label>
             </div>
-            <p class="helper">Use letras absolutas da planilha. Exemplo: nome em B, valor em E, cor em F e imagem em H.</p>
+            <p class="helper">Use letras absolutas da planilha. A coluna <b>Índice / escala</b> controla a altura relativa de cada barra; o valor continua sendo o texto exibido.</p>
           </div>
           <label class="switch-row"><input id="sheetAutoRefresh" type="checkbox"><span>Atualização automática</span></label>
           <div class="button-row">
@@ -244,8 +247,8 @@
           <div class="sheet-meta"><span>Seleção ativa</span><b id="sheetReadSummary">Aba inteira · automático</b></div>
           <div class="divider"></div>
           <div class="section-title"><span>Estrutura de leitura</span><span class="pill">A1 + MAPEAMENTO</span></div>
-          <div class="sheet-columns"><code>nome</code><code>valor</code><code>cor</code><code>imagem</code></div>
-          <p class="helper">No modo automático, o sistema procura esses cabeçalhos dentro do intervalo. No modo manual, usa exatamente as letras informadas.</p>
+          <div class="sheet-columns"><code>nome</code><code>valor</code><code>indice</code><code>cor</code><code>imagem</code></div>
+          <p class="helper">No modo automático, <code>indice</code> (ou <code>índice</code>) controla a escala/altura das barras. Se não existir, o sistema usa <code>valor</code>. No modo manual, usa exatamente as letras informadas.</p>
           <div id="sheetPreview" class="sheet-preview"></div>
         </section>
 
@@ -319,6 +322,6 @@
     </div>
   </dialog>
 
-  <script type="module" src="/js/operator.js?v=0.8.0"></script>
+  <script type="module" src="/js/operator.js?v=0.8.2"></script>
 </body>
 </html>

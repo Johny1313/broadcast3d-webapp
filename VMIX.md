@@ -55,3 +55,15 @@ Esse link ignora o estado de preparação e mostra o resultado final para confer
 ## Google Sheets
 
 A conexão e a validação acontecem no painel do operador. Quando a leitura é concluída, os itens são salvos no estado da sala e enviados ao overlay por WebSocket.
+
+## Sequência de operação do PLAY
+
+1. Mantenha o Browser Input carregado com `/overlay?room=studio`.
+2. Clique em **Preparar** no painel antes de colocar o gráfico no ar.
+3. Ative o Browser Input no Overlay do vMix.
+4. Clique em **PLAY**.
+5. Após a entrada, os elementos permanecem no último frame.
+6. Use **Ocultar cena** para retirar o gráfico.
+7. Para repetir, use **Preparar** e depois **PLAY** novamente.
+
+O endereço com `preview=1&debug=1` serve somente para conferência visual e não deve ser usado como input de programa.

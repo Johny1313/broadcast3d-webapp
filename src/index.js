@@ -3,6 +3,7 @@ import { DurableObject } from 'cloudflare:workers';
 const MAX_STATE_BYTES = 100 * 1024;
 const MAX_MEDIA_BYTES = 48 * 1024 * 1024;
 const MEDIA_CHUNK_BYTES = 96 * 1024;
+const DEFAULT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1XiDEtcuOuW1jfj8jX1JHxFgsbtbABAgTZuhZIYsWI6w/edit?usp=sharing';
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -40,10 +41,10 @@ function defaultState() {
         imageScale: 1.05
       },
       items: [
-        { id: 'industria', name: 'Indústria', value: 128, color: '#3567d7', imageUrl: '' },
-        { id: 'varejo', name: 'Varejo', value: 198, color: '#10a9a6', imageUrl: '' },
-        { id: 'servicos', name: 'Serviços', value: 256, color: '#7650a8', imageUrl: '' },
-        { id: 'tecnologia', name: 'Tecnologia', value: 312, color: '#e9781b', imageUrl: '' }
+        { id: 'industria', name: 'Indústria', value: 128, scale: 128, color: '#3567d7', imageUrl: '' },
+        { id: 'varejo', name: 'Varejo', value: 198, scale: 198, color: '#10a9a6', imageUrl: '' },
+        { id: 'servicos', name: 'Serviços', value: 256, scale: 256, color: '#7650a8', imageUrl: '' },
+        { id: 'tecnologia', name: 'Tecnologia', value: 312, scale: 312, color: '#e9781b', imageUrl: '' }
       ],
       lighting: { ambient: 0.58, key: 1.15, shadowOpacity: 0.28 },
       lights: [
@@ -61,12 +62,13 @@ function defaultState() {
       playback: { mode: 'preview', startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4 },
       dataSource: {
         type: 'google-sheets',
-        url: '',
+        enabled: true,
+        url: DEFAULT_SHEET_URL,
         gid: '0',
         range: '',
         mappingMode: 'auto',
         firstRowHeader: true,
-        columns: { name: 'A', value: 'B', color: 'C', image: 'D' },
+        columns: { name: 'A', value: 'B', color: 'C', image: 'D', scale: 'B' },
         autoRefresh: true,
         refreshSeconds: 5,
         lastUpdated: '',
@@ -100,7 +102,7 @@ function normalizeState(input) {
   state.scene.anchor = { ...defaults.scene.anchor, ...(state.scene.anchor || {}) };
   state.scene.base = { ...defaults.scene.base, ...(state.scene.base || {}) };
   state.scene.bars = { ...defaults.scene.bars, ...(state.scene.bars || {}) };
-  state.scene.items = Array.isArray(state.scene.items) ? state.scene.items : structuredClone(defaults.scene.items);
+  state.scene.items = (Array.isArray(state.scene.items) ? state.scene.items : structuredClone(defaults.scene.items)).map(item => ({ ...item, scale: Number.isFinite(Number(item.scale ?? item.indice)) ? Number(item.scale ?? item.indice) : Number(item.value || 0) }));
   state.scene.lighting = { ...defaults.scene.lighting, ...(state.scene.lighting || {}) };
   state.scene.lights = Array.isArray(state.scene.lights) ? state.scene.lights : structuredClone(defaults.scene.lights);
   state.scene.model = { ...defaults.scene.model, ...(state.scene.model || {}) };
@@ -112,6 +114,8 @@ function normalizeState(input) {
   state.scene.playback = { ...defaults.scene.playback, ...(state.scene.playback || {}) };
   state.scene.dataSource = { ...defaults.scene.dataSource, ...(state.scene.dataSource || {}) };
   state.scene.dataSource.columns = { ...defaults.scene.dataSource.columns, ...(state.scene.dataSource.columns || {}) };
+  state.scene.dataSource.enabled = state.scene.dataSource.enabled !== false;
+  if (!String(state.scene.dataSource.url || '').trim()) state.scene.dataSource.url = DEFAULT_SHEET_URL;
   state.scene.dataSource.mappingMode = state.scene.dataSource.mappingMode === 'manual' ? 'manual' : 'auto';
   state.scene.dataSource.firstRowHeader = state.scene.dataSource.firstRowHeader !== false;
   state.scene.dataSource.range = String(state.scene.dataSource.range || '').trim().toUpperCase();
@@ -256,7 +260,8 @@ function normalizeSheetReadConfig(input = {}) {
       name: cleanColumn(columns.name, 'A'),
       value: cleanColumn(columns.value, 'B'),
       color: cleanColumn(columns.color, ''),
-      image: cleanColumn(columns.image, '')
+      image: cleanColumn(columns.image, ''),
+      scale: cleanColumn(columns.scale, columns.value || 'B')
     }
   };
 }
@@ -289,6 +294,7 @@ function rowsToItems(rows, readConfig = {}) {
   let valueIndex;
   let colorIndex;
   let imageIndex;
+  let scaleIndex;
   if (config.mappingMode === 'manual') {
     const localIndex = label => {
       const absolute = columnLabelToIndex(label);
@@ -299,17 +305,22 @@ function rowsToItems(rows, readConfig = {}) {
     valueIndex = localIndex(config.columns.value);
     colorIndex = localIndex(config.columns.color);
     imageIndex = localIndex(config.columns.image);
+    scaleIndex = localIndex(config.columns.scale);
     const width = Math.max(0, ...selected.rows.map(row => row.length));
     if (nameIndex < 0 || nameIndex >= width) throw new Error(`A coluna de nome (${config.columns.name || '—'}) está fora do intervalo selecionado.`);
     if (valueIndex < 0 || valueIndex >= width) throw new Error(`A coluna de valor (${config.columns.value || '—'}) está fora do intervalo selecionado.`);
     if (colorIndex < 0 || colorIndex >= width) colorIndex = -1;
     if (imageIndex < 0 || imageIndex >= width) imageIndex = -1;
+    if (scaleIndex < 0 || scaleIndex >= width) scaleIndex = valueIndex;
   } else {
     nameIndex = find(['nome', 'name', 'item', 'categoria', 'candidato', 'rotulo', 'label', 'titulo', 'descricao']);
     valueIndex = find(['valor', 'value', 'total', 'percentual', 'porcentagem', 'percent', '%', 'resultado', 'quantidade', 'numero', 'pontuacao', 'score', 'dados']);
     colorIndex = find(['cor', 'color', 'hex', 'colour']);
     imageIndex = find(['imagem', 'image', 'imagem_url', 'image_url', 'foto', 'icone', 'icon', 'avatar', 'photo']);
+    scaleIndex = find(['indice', 'index', 'escala', 'scale', 'altura', 'height', 'peso', 'weight']);
+    if (valueIndex < 0 && scaleIndex >= 0) valueIndex = scaleIndex;
     if (valueIndex < 0) valueIndex = inferColumn(workingRows, new Set(), 'number');
+    if (scaleIndex < 0) scaleIndex = valueIndex;
     if (nameIndex < 0) nameIndex = inferColumn(workingRows, new Set(valueIndex >= 0 ? [valueIndex] : []), 'text');
   }
 
@@ -320,6 +331,7 @@ function rowsToItems(rows, readConfig = {}) {
   const items = workingRows.slice(1).filter(row => row.some(cell => String(cell || '').trim() !== '')).map((row, index) => {
     const name = String(row[nameIndex] || '').trim();
     const value = parseNumber(row[valueIndex]);
+    const scale = parseNumber(row[scaleIndex]);
     if (!name || !Number.isFinite(value)) return null;
     const rawColor = colorIndex >= 0 ? String(row[colorIndex] || '').trim() : '';
     const color = /^#[0-9a-f]{6}$/i.test(rawColor) ? rawColor : palette[index % palette.length];
@@ -328,6 +340,7 @@ function rowsToItems(rows, readConfig = {}) {
       id: `${normalizeHeader(name) || 'item'}-${selected.rowOffset + index}`,
       name,
       value,
+      scale: Number.isFinite(scale) ? scale : value,
       color,
       imageUrl: /^https:\/\//i.test(imageUrl) ? imageUrl : ''
     };
@@ -343,10 +356,12 @@ function rowsToItems(rows, readConfig = {}) {
       valueIndex,
       colorIndex,
       imageIndex,
+      scaleIndex,
       nameColumn: absoluteLabel(nameIndex),
       valueColumn: absoluteLabel(valueIndex),
       colorColumn: absoluteLabel(colorIndex),
-      imageColumn: absoluteLabel(imageIndex)
+      imageColumn: absoluteLabel(imageIndex),
+      scaleColumn: absoluteLabel(scaleIndex)
     },
     selection: {
       range: selected.range.raw,
@@ -494,7 +509,7 @@ export default {
       return json({
         ok: true,
         service: 'broadcast3d-cloudflare',
-        version: '0.8.0',
+        version: '0.8.2',
         realtime: 'durable-object-websocket',
         storage: 'durable-object-sqlite + r2',
         mediaBucket: Boolean(env.MEDIA_BUCKET),
@@ -581,7 +596,8 @@ export default {
             name: url.searchParams.get('nameColumn') || 'A',
             value: url.searchParams.get('valueColumn') || 'B',
             color: url.searchParams.get('colorColumn') || 'C',
-            image: url.searchParams.get('imageColumn') || 'D'
+            image: url.searchParams.get('imageColumn') || 'D',
+            scale: url.searchParams.get('scaleColumn') || url.searchParams.get('valueColumn') || 'B'
           }
         });
         return json({ ok: true, ...result, fetchedAt: new Date().toISOString() });
@@ -606,7 +622,7 @@ export default {
       try {
         const stateResponse = await routeToRoom(new Request(`${url.origin}/api/state?room=${encodeURIComponent(room)}`), env, room);
         const statePayload = await stateResponse.json();
-        return json({ ok: true, version: '0.8.0', room, hasState: Boolean(statePayload?.state), activeCamera: statePayload?.state?.activeCamera || 1, itemCount: statePayload?.state?.scene?.items?.length || 0 });
+        return json({ ok: true, version: '0.8.2', room, hasState: Boolean(statePayload?.state), activeCamera: statePayload?.state?.activeCamera || 1, itemCount: statePayload?.state?.scene?.items?.length || 0 });
       } catch (error) {
         return json({ ok: false, error: error.message || 'Falha ao validar overlay.' }, 500);
       }
@@ -736,6 +752,7 @@ export class BroadcastRoom extends DurableObject {
           mappingMode: result.readConfig?.mappingMode || readConfig.mappingMode,
           firstRowHeader: result.readConfig?.firstRowHeader !== false,
           columns: { ...state.scene.dataSource.columns, ...(result.readConfig?.columns || readConfig.columns) },
+          enabled: body.enabled ?? state.scene.dataSource.enabled,
           autoRefresh: body.autoRefresh ?? state.scene.dataSource.autoRefresh,
           refreshSeconds: Math.max(3, Math.min(3600, Number(body.refreshSeconds || state.scene.dataSource.refreshSeconds || 5))),
           lastUpdated: new Date().toISOString(),

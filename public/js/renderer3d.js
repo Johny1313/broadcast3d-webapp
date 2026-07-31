@@ -187,7 +187,7 @@ function normalizedState(input) {
   state.scene.anchor = { x: 0, y: 0, z: 0, rotationY: 0, scale: 1, locked: true, ...(state.scene.anchor || {}) };
   state.scene.base = { imageUrl: '/assets/default-base.png', thickness: 0.32, scale: 8.5, color: '#d9e1ec', alphaThreshold: 0.18, ...(state.scene.base || {}) };
   state.scene.bars = { width: 0.9, depth: 0.78, maxHeight: 4.8, gap: 0.48, labelScale: 1, imageScale: 1.05, ...(state.scene.bars || {}) };
-  state.scene.items = Array.isArray(state.scene.items) ? state.scene.items : [];
+  state.scene.items = Array.isArray(state.scene.items) ? state.scene.items.map(item => ({ ...item, scale: Number.isFinite(Number(item.scale ?? item.indice)) ? Number(item.scale ?? item.indice) : Number(item.value || 0) })) : [];
   state.scene.lighting = { ambient: 0.58, key: 1.15, shadowOpacity: 0.28, ...(state.scene.lighting || {}) };
   state.scene.lights = Array.isArray(state.scene.lights) ? state.scene.lights : [];
   state.scene.model = {
@@ -204,7 +204,8 @@ function normalizedState(input) {
   state.scene.generatedGraphVisible = state.scene.generatedGraphVisible ?? true;
   if (previousVersion > 0 && previousVersion < 6 && state.scene.model.url && state.scene.generatedGraphVisible === false) state.scene.generatedGraphVisible = true;
   state.scene.playback = { startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4, ...(state.scene.playback || {}) };
-  state.scene.dataSource = { type: 'google-sheets', url: '', gid: '0', autoRefresh: true, refreshSeconds: 5, lastUpdated: '', lastRowCount: 0, ...(state.scene.dataSource || {}) };
+  state.scene.dataSource = { type: 'google-sheets', enabled: true, url: '', gid: '0', autoRefresh: true, refreshSeconds: 5, lastUpdated: '', lastRowCount: 0, ...(state.scene.dataSource || {}) };
+  state.scene.dataSource.enabled = state.scene.dataSource.enabled !== false;
   return state;
 }
 
@@ -226,6 +227,10 @@ export class BroadcastRenderer {
     this.graphAnimatedObjects = [];
     this.currentPlayToken = null;
     this.currentResetToken = null;
+    this.coreReady = false;
+    this.modelReady = true;
+    this.pendingPlayToken = null;
+    this.localPlaybackStartedAt = null;
     this.clock = new THREE.Clock();
 
     this.renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, premultipliedAlpha: false, powerPreference: 'high-performance' });
@@ -352,7 +357,8 @@ export class BroadcastRenderer {
       base: next.scene.base,
       bars: next.scene.bars,
       items: next.scene.items,
-      generatedGraphVisible: next.scene.generatedGraphVisible
+      generatedGraphVisible: next.scene.generatedGraphVisible,
+      dataSourceEnabled: next.scene.dataSource?.enabled !== false
     });
     const lightSignature = JSON.stringify({ lighting: next.scene.lighting, lights: next.scene.lights });
     const modelUrlChanged = next.scene.model.url !== this.currentModelUrl;
@@ -362,16 +368,16 @@ export class BroadcastRenderer {
     this.state = next;
     this.coreSignature = coreSignature;
     this.lightSignature = lightSignature;
+    if (coreChanged) this.coreReady = false;
+    if (modelUrlChanged) this.modelReady = !next.scene.model.url;
     this.applyAnchor();
     this.applyGlobalLighting();
-    this.coreGroup.visible = next.scene.generatedGraphVisible !== false;
+    this.coreGroup.visible = next.scene.generatedGraphVisible !== false && next.scene.dataSource?.enabled !== false;
     if (coreChanged) this.rebuildCore();
     if (lightsChanged) this.rebuildLights();
     if (modelUrlChanged) this.loadModel();
-    else {
-      this.applyModelSettings();
-      this.applyPlaybackState();
-    }
+    else this.applyModelSettings();
+    this.applyPlaybackState();
   }
 
   setCamera(camera) {
@@ -428,6 +434,7 @@ export class BroadcastRenderer {
 
   async rebuildCore() {
     const token = ++this.coreToken;
+    this.coreReady = false;
     disposeGroup(this.coreGroup);
     this.graphAnimatedObjects = [];
     const scene = this.state.scene;
@@ -474,7 +481,7 @@ export class BroadcastRenderer {
 
     const items = scene.items;
     const bars = scene.bars;
-    const maxValue = Math.max(1, ...items.map(item => Number(item.value) || 0));
+    const maxScale = Math.max(1, ...items.map(item => Number(item.scale ?? item.indice ?? item.value) || 0));
     const width = Number(bars.width || 0.9);
     const depth = Number(bars.depth || 0.78);
     const gap = Number(bars.gap || 0.48);
@@ -484,7 +491,8 @@ export class BroadcastRenderer {
 
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index];
-      const height = Math.max(0.22, (Number(item.value) || 0) / maxValue * Number(bars.maxHeight || 4.8));
+      const scaleValue = Number(item.scale ?? item.indice ?? item.value) || 0;
+      const height = Math.max(0.22, scaleValue / maxScale * Number(bars.maxHeight || 4.8));
       const x = startX + index * (width + gap);
       const geometry = new THREE.BoxGeometry(width, height, depth);
       const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(item.color || '#3b82f6'), roughness: 0.46, metalness: 0.08 });
@@ -525,8 +533,15 @@ export class BroadcastRenderer {
       this.graphAnimatedObjects.push({ type: 'label', object: label, index, scaleX: 2.4 * labelScale, scaleY: 0.78 * labelScale });
     }
 
+    if (token !== this.coreToken) return;
+    this.coreReady = true;
     this.applyModelSettings();
-    this.applyPlaybackState(true);
+    this.tryStartPendingPlayback();
+    const elapsed = this.playbackElapsed();
+    this.applyGraphAnimation(elapsed);
+    this.canvas.dispatchEvent(new CustomEvent('graph-ready', {
+      detail: { items: scene.items.length }
+    }));
   }
 
   rebuildLights() {
@@ -568,8 +583,12 @@ export class BroadcastRenderer {
     const token = ++this.modelToken;
     const model = this.state.scene.model;
     this.currentModelUrl = model.url || '';
+    this.modelReady = !model.url;
     this.clearModel();
-    if (!model.url) return;
+    if (!model.url) {
+      this.tryStartPendingPlayback();
+      return;
+    }
 
     this.canvas.dispatchEvent(new CustomEvent('model-loading', {
       detail: { name: model.name || 'modelo', loaded: 0, total: 0, percent: 0 }
@@ -662,7 +681,10 @@ export class BroadcastRenderer {
       this.prepareModelActions();
       this.dispatchModelInfo();
       this.applyModelSettings();
-      this.applyPlaybackState(true);
+      this.modelReady = true;
+      this.tryStartPendingPlayback();
+      const elapsed = this.playbackElapsed();
+      this.applyModelAnimationAtTime(elapsed);
       this.canvas.dispatchEvent(new CustomEvent('model-ready', {
         detail: {
           name: model.name || 'modelo',
@@ -673,6 +695,11 @@ export class BroadcastRenderer {
       }));
     } catch (error) {
       console.error(error);
+      if (token === this.modelToken) {
+        // Não bloqueia o gráfico do Sheets quando apenas o GLB falha.
+        this.modelReady = true;
+        this.tryStartPendingPlayback();
+      }
       this.canvas.dispatchEvent(new CustomEvent('model-error', { detail: { message: error.message || 'Falha ao carregar o modelo.' } }));
     }
   }
@@ -682,7 +709,8 @@ export class BroadcastRenderer {
     this.modelPivot.visible = Boolean(model.visible && model.url);
     const position = model.position;
     const rotation = model.rotation;
-    const supportHeight = this.state.scene.generatedGraphVisible === false ? 0 : Number(this.state.scene.base.thickness || 0);
+    const graphEnabled = this.state.scene.generatedGraphVisible !== false && this.state.scene.dataSource?.enabled !== false;
+    const supportHeight = graphEnabled ? Number(this.state.scene.base.thickness || 0) : 0;
     this.modelPivot.position.set(
       Number(position.x || 0),
       supportHeight + Number(position.y || 0),
@@ -736,31 +764,86 @@ export class BroadcastRenderer {
     this.mixer.update(0);
   }
 
+  sceneReadyForPlayback() {
+    const scene = this.state.scene || {};
+    const graphRequired = scene.generatedGraphVisible !== false && scene.dataSource?.enabled !== false;
+    const modelRequired = Boolean(scene.model?.url && scene.model?.visible !== false);
+    return (!graphRequired || this.coreReady) && (!modelRequired || this.modelReady);
+  }
+
+  tryStartPendingPlayback() {
+    if (this.pendingPlayToken == null || !this.sceneReadyForPlayback()) return false;
+    const token = this.pendingPlayToken;
+    this.pendingPlayToken = null;
+    this.prepareModelActions();
+    this.localPlaybackStartedAt = performance.now();
+    this.applyModelAnimationAtTime(0);
+    this.applyGraphAnimation(0);
+    this.canvas.dispatchEvent(new CustomEvent('playback-started', {
+      detail: { playToken: token, startedAt: Date.now() }
+    }));
+    return true;
+  }
+
   playbackElapsed() {
     const playback = this.state.scene.playback || {};
     const mode = String(playback.mode || 'preview');
+    if (mode === 'final-preview') return Number.POSITIVE_INFINITY;
     if (mode === 'preview') return this.interactive ? Number.POSITIVE_INFINITY : 0;
-    const startedAt = Number(playback.startedAt || 0);
-    if (!startedAt) return 0;
-    return Math.max(0, (Date.now() - startedAt) / 1000);
+    if (mode !== 'playing' || this.localPlaybackStartedAt == null) return 0;
+    return Math.max(0, (performance.now() - this.localPlaybackStartedAt) / 1000);
   }
 
   applyPlaybackState(force = false) {
     const playback = this.state.scene.playback || {};
+    const mode = String(playback.mode || 'preview');
     const playToken = Number(playback.playToken || 0);
     const resetToken = Number(playback.resetToken || 0);
-    const changed = force || playToken !== this.currentPlayToken || resetToken !== this.currentResetToken;
-    if (!changed) return;
+    const playChanged = playToken !== this.currentPlayToken;
+    const resetChanged = resetToken !== this.currentResetToken;
+    const changed = force || playChanged || resetChanged;
+    if (!changed) {
+      if (mode === 'playing') this.tryStartPendingPlayback();
+      return;
+    }
+
     this.currentPlayToken = playToken;
     this.currentResetToken = resetToken;
+
+    if (mode === 'playing') {
+      if (playChanged || force || this.localPlaybackStartedAt == null) {
+        this.pendingPlayToken = playToken || Date.now();
+        this.localPlaybackStartedAt = null;
+        this.prepareModelActions();
+        this.applyModelAnimationAtTime(0);
+        this.applyGraphAnimation(0);
+        this.canvas.dispatchEvent(new CustomEvent('playback-waiting', {
+          detail: {
+            playToken: this.pendingPlayToken,
+            graphReady: this.coreReady,
+            modelReady: this.modelReady
+          }
+        }));
+      }
+      this.tryStartPendingPlayback();
+      return;
+    }
+
+    this.pendingPlayToken = null;
+    this.localPlaybackStartedAt = null;
     this.prepareModelActions();
     const elapsed = this.playbackElapsed();
     this.applyModelAnimationAtTime(elapsed);
     this.applyGraphAnimation(elapsed);
+    if (mode === 'prepared') {
+      this.canvas.dispatchEvent(new CustomEvent('playback-prepared', {
+        detail: { resetToken }
+      }));
+    }
   }
 
   applyGraphAnimation(elapsed) {
-    if (this.state.scene.generatedGraphVisible === false) {
+    if (this.state.scene.generatedGraphVisible === false || this.state.scene.dataSource?.enabled === false) {
       this.coreGroup.visible = false;
       return;
     }

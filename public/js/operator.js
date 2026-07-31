@@ -1,8 +1,9 @@
-import { BroadcastRenderer } from './renderer3d.js?v=0.8.0';
-import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programPreviewUrl, programUrl, setConnection, uploadMedia } from './cloud.js?v=0.8.0';
+import { BroadcastRenderer } from './renderer3d.js?v=0.8.2';
+import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programPreviewUrl, programUrl, setConnection, uploadMedia } from './cloud.js?v=0.8.2';
 
 const $ = id => document.getElementById(id);
 const DEG = Math.PI / 180;
+const DEFAULT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1XiDEtcuOuW1jfj8jX1JHxFgsbtbABAgTZuhZIYsWI6w/edit?usp=sharing';
 let state = null;
 let renderer = null;
 let workingCamera = null;
@@ -40,7 +41,7 @@ function normalizeState(input) {
   next.scene.anchor = { x: 0, y: 0, z: 0, rotationY: 0, scale: 1, locked: true, ...(next.scene.anchor || {}) };
   next.scene.base = { imageUrl: '/assets/default-base.png', thickness: 0.32, scale: 8.5, color: '#d9e1ec', alphaThreshold: 0.18, ...(next.scene.base || {}) };
   next.scene.bars = { width: 0.9, depth: 0.78, maxHeight: 4.8, gap: 0.48, labelScale: 1, imageScale: 1.05, ...(next.scene.bars || {}) };
-  next.scene.items = Array.isArray(next.scene.items) ? next.scene.items : [];
+  next.scene.items = Array.isArray(next.scene.items) ? next.scene.items.map(item => ({ ...item, scale: Number.isFinite(Number(item.scale ?? item.indice)) ? Number(item.scale ?? item.indice) : Number(item.value || 0) })) : [];
   next.scene.lighting = { ambient: 0.58, key: 1.15, shadowOpacity: 0.28, ...(next.scene.lighting || {}) };
   next.scene.lights = Array.isArray(next.scene.lights) ? next.scene.lights : [defaultLight(1), { ...defaultLight(2), color: '#6fa8ff', x: 4, z: -2, intensity: 1.4 }];
   next.scene.model = {
@@ -57,8 +58,10 @@ function normalizeState(input) {
   next.scene.generatedGraphVisible = next.scene.generatedGraphVisible ?? true;
   if (previousVersion > 0 && previousVersion < 6 && next.scene.model.url && next.scene.generatedGraphVisible === false) next.scene.generatedGraphVisible = true;
   next.scene.playback = { mode: 'preview', startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4, ...(next.scene.playback || {}) };
-  next.scene.dataSource = { type: 'google-sheets', url: '', gid: '0', range: '', mappingMode: 'auto', firstRowHeader: true, columns: { name: 'A', value: 'B', color: 'C', image: 'D' }, autoRefresh: true, refreshSeconds: 5, lastUpdated: '', lastRowCount: 0, lastError: '', lastSourceUrl: '', lastRange: '', lastMapping: null, ...(next.scene.dataSource || {}) };
-  next.scene.dataSource.columns = { name: 'A', value: 'B', color: 'C', image: 'D', ...(next.scene.dataSource.columns || {}) };
+  next.scene.dataSource = { type: 'google-sheets', enabled: true, url: DEFAULT_SHEET_URL, gid: '0', range: '', mappingMode: 'auto', firstRowHeader: true, columns: { name: 'A', value: 'B', color: 'C', image: 'D', scale: 'B' }, autoRefresh: true, refreshSeconds: 5, lastUpdated: '', lastRowCount: 0, lastError: '', lastSourceUrl: '', lastRange: '', lastMapping: null, ...(next.scene.dataSource || {}) };
+  next.scene.dataSource.columns = { name: 'A', value: 'B', color: 'C', image: 'D', scale: 'B', ...(next.scene.dataSource.columns || {}) };
+  next.scene.dataSource.enabled = next.scene.dataSource.enabled !== false;
+  if (!String(next.scene.dataSource.url || '').trim()) next.scene.dataSource.url = DEFAULT_SHEET_URL;
   next.scene.dataSource.mappingMode = next.scene.dataSource.mappingMode === 'manual' ? 'manual' : 'auto';
   next.scene.dataSource.firstRowHeader = next.scene.dataSource.firstRowHeader !== false;
   next.scene.guideOpacity = Number(next.scene.guideOpacity ?? 0.72);
@@ -292,12 +295,12 @@ function renderReadouts() {
   pairs.forEach(([id, value]) => { if ($(id)) $(id).textContent = value; });
   $('programCameraLabel').textContent = `CAM ${state.activeCamera}`;
   $('toggleOutputButton').textContent = state.outputVisible ? 'Ocultar cena' : 'Mostrar cena';
-  const graphVisible = state.scene.generatedGraphVisible !== false;
+  const graphVisible = state.scene.generatedGraphVisible !== false && state.scene.dataSource?.enabled !== false;
   if ($('graphVisibilityPill')) $('graphVisibilityPill').textContent = graphVisible ? 'VISÍVEL' : 'OCULTO';
   if ($('graphVisibilityPill')) $('graphVisibilityPill').className = `pill ${graphVisible ? 'ready' : ''}`;
   if ($('sceneModeBadge')) {
     const hasModel = Boolean(state.scene.model.url && state.scene.model.visible);
-    $('sceneModeBadge').textContent = hasModel && graphVisible ? `MODO: ${String(state.scene.model.format || 'GLB').toUpperCase()} + GRÁFICO` : hasModel ? `MODO: MODELO ${String(state.scene.model.format || '').toUpperCase()}` : 'MODO: GRÁFICO NATIVO';
+    $('sceneModeBadge').textContent = hasModel && graphVisible ? `MODO: ${String(state.scene.model.format || 'GLB').toUpperCase()} + GRÁFICO` : hasModel ? `MODO: MODELO ${String(state.scene.model.format || '').toUpperCase()}` : graphVisible ? 'MODO: GRÁFICO NATIVO' : 'MODO: DADOS DESABILITADOS';
   }
   document.querySelectorAll('.cut-button').forEach(button => button.classList.toggle('active', Number(button.dataset.cut) === state.activeCamera));
 }
@@ -323,7 +326,7 @@ function renderBarItems() {
     const row = document.createElement('div');
     row.className = 'bar-item';
     const preview = item.imageUrl || makeInitialSvg(item);
-    row.innerHTML = `<img class="bar-thumb" src="${preview}" alt=""><div><strong>${escapeHtml(item.name)}</strong><small>Valor ${item.value} · ${item.color}</small></div><button type="button">Imagem</button><input type="file" accept="image/png,image/jpeg,image/webp" hidden>`;
+    row.innerHTML = `<img class="bar-thumb" src="${preview}" alt=""><div><strong>${escapeHtml(item.name)}</strong><small>Valor ${item.value} · índice ${Number(item.scale ?? item.value).toLocaleString('pt-BR')} · ${item.color}</small></div><button type="button">Imagem</button><input type="file" accept="image/png,image/jpeg,image/webp" hidden>`;
     const input = row.querySelector('input');
     row.querySelector('button').addEventListener('click', () => input.click());
     input.addEventListener('change', async () => {
@@ -360,8 +363,10 @@ function renderSheetControls() {
   if (!state?.scene?.dataSource) return;
   const source = state.scene.dataSource;
   const connected = Boolean(source.url);
-  $('sheetUrl').value = source.url || '';
-  $('sheetUrlQuick').value = source.url || '';
+  $('sheetDataEnabled').checked = source.enabled !== false;
+  $('sheetDataEnabledQuick').checked = source.enabled !== false;
+  $('sheetUrl').value = source.url || DEFAULT_SHEET_URL;
+  $('sheetUrlQuick').value = source.url || DEFAULT_SHEET_URL;
   $('sheetGid').value = source.gid || '0';
   $('sheetRange').value = source.range || '';
   $('sheetMappingMode').value = source.mappingMode === 'manual' ? 'manual' : 'auto';
@@ -370,25 +375,32 @@ function renderSheetControls() {
   $('sheetValueColumn').value = source.columns?.value || 'B';
   $('sheetColorColumn').value = source.columns?.color || 'C';
   $('sheetImageColumn').value = source.columns?.image || 'D';
+  $('sheetScaleColumn').value = source.columns?.scale || source.columns?.value || 'B';
   $('sheetManualMapping').hidden = source.mappingMode !== 'manual';
   $('sheetRefreshSeconds').value = Math.max(3, Number(source.refreshSeconds || 5));
   $('sheetAutoRefresh').checked = source.autoRefresh !== false;
   $('sheetLastUpdate').textContent = formatSheetDate(source.lastUpdated);
   const readRange = source.range || 'Aba inteira';
   const readMapping = source.mappingMode === 'manual'
-    ? `nome ${source.columns?.name || '—'} · valor ${source.columns?.value || '—'} · cor ${source.columns?.color || '—'} · imagem ${source.columns?.image || '—'}`
+    ? `nome ${source.columns?.name || '—'} · valor ${source.columns?.value || '—'} · índice ${source.columns?.scale || source.columns?.value || '—'} · cor ${source.columns?.color || '—'} · imagem ${source.columns?.image || '—'}`
     : 'automático por cabeçalho';
   $('sheetReadSummary').textContent = `${readRange} · ${readMapping}`;
-  $('sheetConnectionPill').textContent = connected ? 'CONECTADO' : 'DESCONECTADO';
-  $('sheetConnectionPill').className = `pill ${connected ? 'ready' : ''}`;
-  $('sheetStatusPill').textContent = connected ? 'CONECTADO' : 'GOOGLE SHEETS';
-  $('sheetStatusPill').className = `pill ${connected ? 'ready' : ''}`;
+  const enabled = source.enabled !== false;
+  $('sheetConnectionPill').textContent = !enabled ? 'DESABILITADO' : connected ? 'CONECTADO' : 'DESCONECTADO';
+  $('sheetConnectionPill').className = `pill ${enabled && connected ? 'ready' : ''}`;
+  $('sheetStatusPill').textContent = !enabled ? 'PAUSADO' : connected ? 'CONECTADO' : 'GOOGLE SHEETS';
+  $('sheetStatusPill').className = `pill ${enabled && connected ? 'ready' : ''}`;
   const rangeSummary = source.range ? ` · intervalo ${source.range}` : '';
   const mappingSummary = source.mappingMode === 'manual' ? ` · ${source.columns?.name || 'A'}/${source.columns?.value || 'B'}` : ' · colunas automáticas';
-  const summary = connected
-    ? `${Number(source.lastRowCount || state.scene.items.length)} linhas · GID ${source.gid || '0'}${rangeSummary}${mappingSummary}`
-    : 'Nenhuma planilha conectada';
+  const summary = !enabled
+    ? 'Leitura desabilitada · últimos dados preservados'
+    : connected
+      ? `${Number(source.lastRowCount || state.scene.items.length)} linhas · GID ${source.gid || '0'}${rangeSummary}${mappingSummary}`
+      : 'Nenhuma planilha conectada';
   $('sheetQuickStatus').textContent = summary;
+  $('connectSheetButton').disabled = !enabled;
+  $('refreshSheetButton').disabled = !enabled;
+  $('connectSheetQuickButton').disabled = !enabled;
   if (!$('sheetStatus').dataset.busy) $('sheetStatus').textContent = source.lastError
     ? source.lastError
     : connected ? `Planilha configurada. ${summary}.` : 'Nenhuma planilha conectada.';
@@ -398,7 +410,7 @@ function renderSheetControls() {
   state.scene.items.slice(0, 8).forEach(item => {
     const row = document.createElement('div');
     row.className = 'sheet-preview-row';
-    row.innerHTML = `<span style="--item-color:${escapeHtml(item.color || '#3567d7')}"></span><strong>${escapeHtml(item.name)}</strong><b>${Number(item.value).toLocaleString('pt-BR')}</b>`;
+    row.innerHTML = `<span style="--item-color:${escapeHtml(item.color || '#3567d7')}"></span><strong>${escapeHtml(item.name)}</strong><b>${Number(item.value).toLocaleString('pt-BR')} · índice ${Number(item.scale ?? item.value).toLocaleString('pt-BR')}</b>`;
     preview.appendChild(row);
   });
   if (!state.scene.items.length) preview.innerHTML = '<span class="helper">Nenhuma linha carregada.</span>';
@@ -406,7 +418,8 @@ function renderSheetControls() {
 
 function syncSheetInputsToState() {
   const source = state.scene.dataSource;
-  source.url = String($('sheetUrl').value || $('sheetUrlQuick').value || '').trim();
+  source.enabled = $('sheetDataEnabled').checked;
+  source.url = String($('sheetUrl').value || $('sheetUrlQuick').value || DEFAULT_SHEET_URL).trim();
   source.gid = String($('sheetGid').value || '0').replace(/[^0-9]/g, '') || '0';
   source.range = String($('sheetRange').value || '').trim().toUpperCase();
   source.mappingMode = $('sheetMappingMode').value === 'manual' ? 'manual' : 'auto';
@@ -415,7 +428,8 @@ function syncSheetInputsToState() {
     name: String($('sheetNameColumn').value || 'A').trim().toUpperCase().replace(/[^A-Z]/g, ''),
     value: String($('sheetValueColumn').value || 'B').trim().toUpperCase().replace(/[^A-Z]/g, ''),
     color: String($('sheetColorColumn').value || '').trim().toUpperCase().replace(/[^A-Z]/g, ''),
-    image: String($('sheetImageColumn').value || '').trim().toUpperCase().replace(/[^A-Z]/g, '')
+    image: String($('sheetImageColumn').value || '').trim().toUpperCase().replace(/[^A-Z]/g, ''),
+    scale: String($('sheetScaleColumn').value || $('sheetValueColumn').value || 'B').trim().toUpperCase().replace(/[^A-Z]/g, '')
   };
   source.refreshSeconds = Math.max(3, Math.min(3600, Number($('sheetRefreshSeconds').value || 5)));
   source.autoRefresh = $('sheetAutoRefresh').checked;
@@ -425,7 +439,7 @@ function scheduleSheetRefresh() {
   clearInterval(sheetTimer);
   sheetTimer = null;
   const source = state?.scene?.dataSource;
-  if (!source?.url || source.autoRefresh === false) return;
+  if (!source?.url || source.enabled === false || source.autoRefresh === false) return;
   const seconds = Math.max(3, Math.min(3600, Number(source.refreshSeconds || 5)));
   sheetTimer = setInterval(() => refreshGoogleSheet({ persist: false, silent: true }), seconds * 1000);
 }
@@ -434,6 +448,10 @@ async function refreshGoogleSheet({ persist = true, silent = false } = {}) {
   if (sheetBusy) return;
   syncSheetInputsToState();
   const source = state.scene.dataSource;
+  if (source.enabled === false) {
+    if (!silent) showToast('Habilite os dados do Sheets / CSV antes de atualizar.');
+    return;
+  }
   if (!source.url) {
     if (!silent) showToast('Cole o link público do Google Sheets.');
     return;
@@ -452,7 +470,8 @@ async function refreshGoogleSheet({ persist = true, silent = false } = {}) {
         range: source.range || '',
         mappingMode: source.mappingMode || 'auto',
         firstRowHeader: source.firstRowHeader !== false,
-        columns: source.columns || { name: 'A', value: 'B', color: 'C', image: 'D' },
+        enabled: source.enabled !== false,
+        columns: source.columns || { name: 'A', value: 'B', color: 'C', image: 'D', scale: 'B' },
         autoRefresh: source.autoRefresh !== false,
         refreshSeconds: source.refreshSeconds || 5
       })
@@ -860,7 +879,7 @@ function bindSheetControls() {
   $('openSheetControlsButton').addEventListener('click', () => openPanel('sheets'));
   $('connectSheetButton').addEventListener('click', () => refreshGoogleSheet({ persist: true }));
   $('refreshSheetButton').addEventListener('click', () => refreshGoogleSheet({ persist: true }));
-  ['sheetUrl', 'sheetGid', 'sheetRange', 'sheetMappingMode', 'sheetFirstRowHeader', 'sheetNameColumn', 'sheetValueColumn', 'sheetColorColumn', 'sheetImageColumn', 'sheetRefreshSeconds', 'sheetAutoRefresh'].forEach(id => {
+  ['sheetUrl', 'sheetGid', 'sheetRange', 'sheetMappingMode', 'sheetFirstRowHeader', 'sheetNameColumn', 'sheetValueColumn', 'sheetColorColumn', 'sheetImageColumn', 'sheetScaleColumn', 'sheetRefreshSeconds', 'sheetAutoRefresh'].forEach(id => {
     $(id).addEventListener('change', () => {
       if (!state || suppressInputs) return;
       syncSheetInputsToState();
@@ -872,6 +891,19 @@ function bindSheetControls() {
   $('sheetMappingMode').addEventListener('input', () => {
     $('sheetManualMapping').hidden = $('sheetMappingMode').value !== 'manual';
   });
+  const toggleSheetEnabled = async enabled => {
+    if (!state || suppressInputs) return;
+    state.scene.dataSource.enabled = Boolean(enabled);
+    $('sheetDataEnabled').checked = Boolean(enabled);
+    $('sheetDataEnabledQuick').checked = Boolean(enabled);
+    renderer.setState(state);
+    renderSheetControls();
+    scheduleSheetRefresh();
+    queueSave(enabled ? 'Dados do Sheets / CSV habilitados' : 'Dados do Sheets / CSV desabilitados');
+    if (enabled && state.scene.dataSource.url) await refreshGoogleSheet({ persist: true, silent: false });
+  };
+  $('sheetDataEnabled').addEventListener('change', event => toggleSheetEnabled(event.target.checked));
+  $('sheetDataEnabledQuick').addEventListener('change', event => toggleSheetEnabled(event.target.checked));
 }
 
 function bindActions() {
@@ -949,7 +981,7 @@ function bindActions() {
   $('playSceneButton').addEventListener('click', async () => {
     try {
       await api('/api/play', { method: 'POST', body: '{}' });
-      showToast('PLAY: GLB e gráfico iniciados juntos');
+      showToast('PLAY enviado: o overlay inicia do frame zero assim que GLB e gráfico estiverem prontos');
     } catch (error) {
       showToast(error.message);
     }
@@ -1016,6 +1048,19 @@ async function init() {
   $('previewCanvas').addEventListener('model-error', event => {
     if ($('modelQuickStatus')) $('modelQuickStatus').textContent = `ERRO · ${event.detail.message}`;
     showToast(event.detail.message);
+  });
+  $('previewCanvas').addEventListener('playback-waiting', event => {
+    const detail = event.detail || {};
+    const missing = [];
+    if (!detail.modelReady) missing.push('GLB');
+    if (!detail.graphReady) missing.push('gráfico');
+    if ($('playbackStatusPill')) $('playbackStatusPill').textContent = missing.length ? `AGUARDANDO ${missing.join(' + ').toUpperCase()}` : 'DISPARANDO';
+  });
+  $('previewCanvas').addEventListener('playback-started', () => {
+    if ($('playbackStatusPill')) $('playbackStatusPill').textContent = 'NO AR';
+  });
+  $('previewCanvas').addEventListener('playback-prepared', () => {
+    if ($('playbackStatusPill')) $('playbackStatusPill').textContent = 'PRONTO';
   });
   bindTabs();
   bindSceneInputs();

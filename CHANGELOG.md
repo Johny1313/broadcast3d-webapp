@@ -1,3 +1,21 @@
+# Changelog
+
+## 0.8.2
+
+- Corrigido o PLAY do painel que podia chegar ao overlay antes do GLB terminar de carregar.
+- O overlay agora mantém o comando pendente e começa no frame zero somente quando GLB e gráfico estiverem prontos.
+- O tempo da animação passou a ser local ao renderer, evitando saltos para o último frame por atraso de rede ou carregamento.
+- O link `preview=1&debug=1` foi separado como prévia final e não é usado para reprodução ao vivo.
+- Adicionados estados de diagnóstico: PREPARADO, aguardando GLB/gráfico e PLAY NO AR.
+- PLAY repetido reinicia todas as animações do zero sem exigir recarregar o overlay.
+
+## 0.8.1
+
+- Adicionada opção para habilitar/desabilitar Google Sheets/CSV.
+- Ao desabilitar, a leitura automática para e o gráfico gerado é ocultado sem apagar os dados.
+- Adicionado mapeamento automático/manual da coluna `indice` como escala das barras.
+- Configurada a planilha padrão do projeto.
+
 ## 0.8.0
 
 - Campo de intervalo A1 para limitar linhas e colunas do Google Sheets.
@@ -6,8 +24,6 @@
 - Opção para considerar ou não a primeira linha do intervalo como cabeçalho.
 - Persistência da seleção por sala e uso da mesma configuração no auto-refresh.
 - Mensagens de erro específicas para intervalo vazio ou coluna fora da seleção.
-
-# Changelog
 
 ## 0.7.0
 

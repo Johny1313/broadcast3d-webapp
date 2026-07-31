@@ -1,5 +1,5 @@
 {
-  "version": "0.8.0",
+  "version": "0.8.2",
   "stateVersion": 8,
-  "build": "sheets-a1-range-manual-columns"
+  "build": "play-ready-gate-local-clock"
 }

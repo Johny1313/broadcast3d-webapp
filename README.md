@@ -1,4 +1,22 @@
-# Broadcast3D Cloud v0.8.0
+# Broadcast3D Cloud v0.8.2
+
+## PLAY confiável no overlay do vMix
+
+O overlay LIVE deve permanecer carregado no vMix usando `/overlay?room=studio`. Antes da entrada no ar, clique em **Preparar**. Ao clicar em **PLAY**, o comando é enviado pelo WebSocket, mas a contagem só começa localmente quando o GLB e o gráfico do Sheets estiverem prontos. Assim, um GLB grande não pula diretamente para o último frame.
+
+Fluxo:
+
+```text
+Overlay LIVE carregado no vMix
+→ Preparar
+→ PLAY
+→ GLB + gráfico iniciam no frame zero
+→ cada animação termina e permanece no último frame
+→ Ocultar cena para retirar do ar
+```
+
+Não use o endereço com `preview=1` no vMix. Esse link é apenas uma prévia final para conferência e não reproduz a animação ao receber PLAY.
+
 
 ## Seleção de linhas e colunas do Google Sheets
 
@@ -144,3 +162,12 @@ npm run deploy
 ```
 
 O projeto deve ser publicado como **Cloudflare Worker**, não como site estático no Pages.
+
+
+## v0.8.2 — Sheets/CSV habilitável e índice das barras
+
+- Chave para habilitar ou desabilitar os dados do Google Sheets/CSV sem apagar a última leitura.
+- Ao desabilitar, o gráfico gerado fica oculto e a atualização automática é interrompida.
+- A coluna `indice`/`índice` controla a escala e a altura relativa das barras.
+- A coluna `valor` permanece como texto exibido; se não existir, o índice também é usado como valor.
+- Planilha padrão deste projeto: `https://docs.google.com/spreadsheets/d/1XiDEtcuOuW1jfj8jX1JHxFgsbtbABAgTZuhZIYsWI6w/edit?usp=sharing`.
