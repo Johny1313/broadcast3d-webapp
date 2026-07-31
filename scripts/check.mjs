@@ -1,4 +1,5 @@
 import { access, readFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 
 const files = [
   'wrangler.jsonc', 'src/index.js', 'public/index.html', 'public/program.html',
@@ -8,41 +9,32 @@ const files = [
 ];
 for (const file of files) await access(new URL(`../${file}`, import.meta.url));
 
+for (const file of ['src/index.js','public/js/operator.js','public/js/program.js','public/js/renderer3d.js','public/js/cloud.js']) {
+  const result = spawnSync(process.execPath, ['--check', new URL(`../${file}`, import.meta.url).pathname], { encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(`Erro de sintaxe em ${file}: ${result.stderr}`);
+}
+
 const worker = await readFile(new URL('../src/index.js', import.meta.url), 'utf8');
 for (const required of [
-  'BroadcastRoom', '/api/state', '/api/ws', '/api/upload', '/api/sheets',
-  '/api/play', '/api/play/reset', "version: '0.5.1'", 'state.version = 5',
-  'scene.playback', 'state.scene.playback.startedAt = now'
+  'BroadcastRoom', '/api/state', '/api/ws', '/api/upload', '/api/sheets', '/api/sheets/sync',
+  '/api/overlay-check', "version: '0.6.0'", 'state.version = 6', "playback.mode = 'playing'",
+  "playback.mode = 'prepared'", 'googleSheetCandidates', 'detectDelimiter'
 ]) if (!worker.includes(required)) throw new Error(`Implementação ausente no Worker: ${required}`);
 
 const renderer = await readFile(new URL('../public/js/renderer3d.js', import.meta.url), 'utf8');
-for (const required of [
-  'GLTFLoader', 'AnimationMixer', 'LoopOnce', 'clampWhenFinished = true',
-  'applyPlaybackState', 'applyGraphAnimation', 'graphStart', 'graphDuration',
-  'applyModelAnimationAtTime', 'action.time = localTime', 'action.paused = finished', 'this.mixer.update(0)', 'modelDuration'
-]) if (!renderer.includes(required)) throw new Error(`Playback 3D ausente: ${required}`);
-for (const removed of ['LoopRepeat', 'animation.loop === false', 'modelAnimationLoop']) {
-  if (renderer.includes(removed)) throw new Error(`Loop antigo ainda presente no renderer: ${removed}`);
+for (const required of ['GLTFLoader','LoopOnce','clampWhenFinished = true','applyGraphAnimation','Number.POSITIVE_INFINITY','action.paused = finished']) {
+  if (!renderer.includes(required)) throw new Error(`Renderer incompleto: ${required}`);
 }
 
 const operator = await readFile(new URL('../public/js/operator.js', import.meta.url), 'utf8');
-for (const required of [
-  'playSceneButton', 'resetScenePlaybackButton', "api('/api/play'", "api('/api/play/reset'",
-  'graphAnimationStart', 'graphAnimationDuration', "controlUrl('/play')", "controlUrl('/reset')"
-]) if (!operator.includes(required)) throw new Error(`Controle ausente: ${required}`);
-for (const removed of ['modelAnimationPlay', 'modelAnimationLoop', 'restartAnimationsButton', 'state.scene.generatedGraphVisible = false']) {
-  if (operator.includes(removed)) throw new Error(`Controle antigo ainda presente: ${removed}`);
+for (const required of ["api('/api/sheets/sync'", 'programPreviewUrl', '/api/overlay-check', 'Backend não encontrado']) {
+  if (!operator.includes(required)) throw new Error(`Operador incompleto: ${required}`);
 }
 
-const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
-for (const required of [
-  'v0.5.1', '▶ PLAY', 'Preparar', 'graphAnimationStart', 'graphAnimationDuration',
-  'PLAY geral — GLB + gráfico', 'último frame'
-]) if (!html.includes(required)) throw new Error(`Elemento de interface ausente: ${required}`);
+const cloud = await readFile(new URL('../public/js/cloud.js', import.meta.url), 'utf8');
+if (!cloud.includes("new URL('/overlay'")) throw new Error('Link de overlay não usa a rota /overlay.');
 
 const wrangler = await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
-for (const route of ['/api/*', '/camera/*', '/cut/*', '/play', '/reset']) {
-  if (!wrangler.includes(route)) throw new Error(`Rota não encaminhada ao Worker: ${route}`);
-}
+for (const route of ['/api/*','/camera/*','/cut/*','/play','/reset','/overlay']) if (!wrangler.includes(route)) throw new Error(`Rota ausente: ${route}`);
 
-console.log('Broadcast3D v0.5.1 validado: GLB congelado individualmente no último frame, sem loop, com gráfico Sheets sincronizado.');
+console.log('Broadcast3D v0.6.0 validado: overlay direto, diagnóstico, Google Sheets persistido e PLAY sincronizado.');

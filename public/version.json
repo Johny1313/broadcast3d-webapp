@@ -1,4 +1,5 @@
 {
-  "version": "0.5.1",
-  "build": "freeze-final-frame"
+  "version": "0.6.0",
+  "stateVersion": 6,
+  "build": "overlay-sheets-fix"
 }

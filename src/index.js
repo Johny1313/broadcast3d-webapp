@@ -17,7 +17,7 @@ function json(data, status = 200, extraHeaders = {}) {
 
 function defaultState() {
   return {
-    version: 5,
+    version: 6,
     projectName: 'Projeto 3D - Eleições',
     activeCamera: 1,
     selectedCamera: 1,
@@ -58,7 +58,7 @@ function defaultState() {
         animation: { speed: 1 }
       },
       generatedGraphVisible: true,
-      playback: { startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4 },
+      playback: { mode: 'preview', startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4 },
       dataSource: {
         type: 'google-sheets',
         url: '',
@@ -66,7 +66,9 @@ function defaultState() {
         autoRefresh: true,
         refreshSeconds: 5,
         lastUpdated: '',
-        lastRowCount: 0
+        lastRowCount: 0,
+        lastError: '',
+        lastSourceUrl: ''
       },
       guideOpacity: 0.72
     },
@@ -83,7 +85,7 @@ function normalizeState(input) {
   const defaults = defaultState();
   const state = structuredClone(input && typeof input === 'object' ? input : defaults);
   const previousVersion = Number(state.version || 0);
-  state.version = 5;
+  state.version = 6;
   state.projectName ||= defaults.projectName;
   state.activeCamera = Number(state.activeCamera || 1);
   state.selectedCamera = Number(state.selectedCamera || state.activeCamera || 1);
@@ -100,7 +102,7 @@ function normalizeState(input) {
   state.scene.model.rotation = { ...defaults.scene.model.rotation, ...(state.scene.model.rotation || {}) };
   state.scene.model.animation = { ...defaults.scene.model.animation, ...(state.scene.model.animation || {}) };
   state.scene.generatedGraphVisible = state.scene.generatedGraphVisible ?? true;
-  if (previousVersion > 0 && previousVersion < 5 && state.scene.model.url && state.scene.generatedGraphVisible === false) state.scene.generatedGraphVisible = true;
+  if (previousVersion > 0 && previousVersion < 6 && state.scene.model.url && state.scene.generatedGraphVisible === false) state.scene.generatedGraphVisible = true;
   state.scene.playback = { ...defaults.scene.playback, ...(state.scene.playback || {}) };
   state.scene.dataSource = { ...defaults.scene.dataSource, ...(state.scene.dataSource || {}) };
   state.scene.guideOpacity = Number(state.scene.guideOpacity ?? defaults.scene.guideOpacity);
@@ -113,55 +115,95 @@ function normalizeState(input) {
 }
 
 
+function detectDelimiter(text) {
+  const source = String(text || '').replace(/^\uFEFF/, '');
+  const firstLine = source.split(/\r?\n/).find(line => line.trim()) || '';
+  const candidates = [',', ';', '\t'];
+  const counts = new Map(candidates.map(candidate => [candidate, 0]));
+  let quoted = false;
+  for (let index = 0; index < firstLine.length; index += 1) {
+    const char = firstLine[index];
+    if (char === '"' && firstLine[index + 1] === '"' && quoted) { index += 1; continue; }
+    if (char === '"') { quoted = !quoted; continue; }
+    if (!quoted && counts.has(char)) counts.set(char, counts.get(char) + 1);
+  }
+  return candidates.sort((a, b) => counts.get(b) - counts.get(a))[0] || ',';
+}
+
 function parseCsvRows(text) {
   const rows = [];
   let row = [];
   let field = '';
   let quoted = false;
   const source = String(text || '').replace(/^\uFEFF/, '');
+  const delimiter = detectDelimiter(source);
   for (let index = 0; index < source.length; index += 1) {
     const char = source[index];
     if (quoted) {
-      if (char === '"' && source[index + 1] === '"') {
-        field += '"';
-        index += 1;
-      } else if (char === '"') quoted = false;
+      if (char === '"' && source[index + 1] === '"') { field += '"'; index += 1; }
+      else if (char === '"') quoted = false;
       else field += char;
       continue;
     }
     if (char === '"') quoted = true;
-    else if (char === ',') { row.push(field); field = ''; }
+    else if (char === delimiter) { row.push(field); field = ''; }
     else if (char === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
     else if (char !== '\r') field += char;
   }
   row.push(field);
   if (row.some(value => String(value).trim() !== '')) rows.push(row);
-  return rows;
+  return rows.filter(current => current.some(value => String(value).trim() !== ''));
 }
 
 function normalizeHeader(value) {
-  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/[^a-z0-9%]+/g, '_').replace(/^_|_$/g, '');
+}
+
+function parseNumber(value) {
+  let raw = String(value ?? '').trim().replace(/\s/g, '').replace(/%/g, '');
+  if (!raw) return NaN;
+  if (raw.includes(',') && raw.includes('.')) {
+    if (raw.lastIndexOf(',') > raw.lastIndexOf('.')) raw = raw.replace(/\./g, '').replace(',', '.');
+    else raw = raw.replace(/,/g, '');
+  } else if (raw.includes(',')) raw = raw.replace(',', '.');
+  raw = raw.replace(/[^0-9+\-.eE]/g, '');
+  return Number(raw);
+}
+
+function inferColumn(rows, excluded = new Set(), mode = 'text') {
+  const columnCount = Math.max(0, ...rows.map(row => row.length));
+  let best = -1;
+  let score = -1;
+  for (let column = 0; column < columnCount; column += 1) {
+    if (excluded.has(column)) continue;
+    const values = rows.slice(1).map(row => String(row[column] ?? '').trim()).filter(Boolean);
+    if (!values.length) continue;
+    const numeric = values.filter(value => Number.isFinite(parseNumber(value))).length;
+    const currentScore = mode === 'number' ? numeric / values.length : (values.length - numeric) / values.length;
+    if (currentScore > score) { score = currentScore; best = column; }
+  }
+  return best;
 }
 
 function rowsToItems(rows) {
-  if (!Array.isArray(rows) || rows.length < 2) throw new Error('A planilha precisa ter cabeçalho e pelo menos uma linha.');
+  if (!Array.isArray(rows) || rows.length < 2) throw new Error('A planilha precisa ter cabeçalho e pelo menos uma linha de dados.');
   const headers = rows[0].map(normalizeHeader);
   const find = names => headers.findIndex(header => names.includes(header));
-  const nameIndex = find(['nome', 'name', 'item', 'categoria', 'candidato']);
-  const valueIndex = find(['valor', 'value', 'total', 'percentual', 'porcentagem', 'resultado']);
-  const colorIndex = find(['cor', 'color', 'hex']);
-  const imageIndex = find(['imagem', 'image', 'imagem_url', 'image_url', 'foto', 'icone', 'icon']);
-  if (nameIndex < 0 || valueIndex < 0) throw new Error('Use ao menos as colunas nome e valor no Google Sheets.');
+  let nameIndex = find(['nome', 'name', 'item', 'categoria', 'candidato', 'rotulo', 'label', 'titulo', 'descricao']);
+  let valueIndex = find(['valor', 'value', 'total', 'percentual', 'porcentagem', 'percent', '%', 'resultado', 'quantidade', 'numero', 'pontuacao', 'score', 'dados']);
+  const colorIndex = find(['cor', 'color', 'hex', 'colour']);
+  const imageIndex = find(['imagem', 'image', 'imagem_url', 'image_url', 'foto', 'icone', 'icon', 'avatar', 'photo']);
+  if (valueIndex < 0) valueIndex = inferColumn(rows, new Set(), 'number');
+  if (nameIndex < 0) nameIndex = inferColumn(rows, new Set(valueIndex >= 0 ? [valueIndex] : []), 'text');
+  if (nameIndex < 0 || valueIndex < 0 || nameIndex === valueIndex) {
+    throw new Error('Não encontrei as colunas de nome e valor. Use os cabeçalhos nome e valor, ou deixe a primeira coluna como texto e a segunda como número.');
+  }
   const palette = ['#3567d7', '#10a9a6', '#7650a8', '#e9781b', '#d54b63', '#3b9d5d'];
   const items = rows.slice(1).filter(row => row.some(cell => String(cell || '').trim() !== '')).map((row, index) => {
-    const name = String(row[nameIndex] || `Item ${index + 1}`).trim();
-    let rawValue = String(row[valueIndex] ?? '0').trim().replace(/\s/g, '').replace('%', '');
-    if (rawValue.includes(',') && rawValue.includes('.')) {
-      if (rawValue.lastIndexOf(',') > rawValue.lastIndexOf('.')) rawValue = rawValue.replace(/\./g, '').replace(',', '.');
-      else rawValue = rawValue.replace(/,/g, '');
-    } else if (rawValue.includes(',')) rawValue = rawValue.replace(',', '.');
-    const value = Number(rawValue) || 0;
-    const rawColor = String(row[colorIndex] || '').trim();
+    const name = String(row[nameIndex] || '').trim();
+    const value = parseNumber(row[valueIndex]);
+    if (!name || !Number.isFinite(value)) return null;
+    const rawColor = colorIndex >= 0 ? String(row[colorIndex] || '').trim() : '';
     const color = /^#[0-9a-f]{6}$/i.test(rawColor) ? rawColor : palette[index % palette.length];
     const imageUrl = imageIndex >= 0 ? String(row[imageIndex] || '').trim() : '';
     return {
@@ -171,49 +213,80 @@ function rowsToItems(rows) {
       color,
       imageUrl: /^https:\/\//i.test(imageUrl) ? imageUrl : ''
     };
-  }).slice(0, 32);
-  return { headers, items };
+  }).filter(Boolean).slice(0, 32);
+  if (!items.length) throw new Error('A planilha foi lida, mas nenhuma linha válida foi encontrada. Verifique se nome e valor estão preenchidos.');
+  return { headers, items, mapping: { nameIndex, valueIndex, colorIndex, imageIndex } };
 }
 
-function googleSheetCsvUrl(source, requestedGid = '0') {
+function sheetIdentity(source, requestedGid = '0') {
   const raw = String(source || '').trim();
   if (!raw) throw new Error('Cole o link público do Google Sheets.');
   let url;
   try { url = new URL(raw); } catch { throw new Error('Link do Google Sheets inválido.'); }
   const allowed = ['docs.google.com', 'docs.googleusercontent.com'];
-  if (!allowed.some(host => url.hostname === host || url.hostname.endsWith(`.${host}`))) {
-    throw new Error('Use apenas um link do Google Sheets.');
-  }
+  if (!allowed.some(host => url.hostname === host || url.hostname.endsWith(`.${host}`))) throw new Error('Use um link do Google Sheets.');
   const hashGid = (url.hash.match(/gid=(\d+)/) || [])[1] || '';
   const preferredGid = String(requestedGid || '').trim();
   const gid = String((preferredGid && preferredGid !== '0' ? preferredGid : '') || url.searchParams.get('gid') || hashGid || '0').replace(/[^0-9]/g, '') || '0';
   const published = url.pathname.match(/^\/spreadsheets\/d\/e\/([a-zA-Z0-9-_]+)\/pub/);
-  if (published) {
-    const target = new URL(`https://docs.google.com/spreadsheets/d/e/${published[1]}/pub`);
-    target.searchParams.set('output', 'csv');
-    target.searchParams.set('gid', gid);
-    return target;
-  }
   const standard = url.pathname.match(/^\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-  if (standard) {
-    const target = new URL(`https://docs.google.com/spreadsheets/d/${standard[1]}/gviz/tq`);
-    target.searchParams.set('tqx', 'out:csv');
-    target.searchParams.set('gid', gid);
-    return target;
+  if (!published && !standard) throw new Error('Não foi possível identificar o ID da planilha.');
+  return { url, gid, publishedId: published?.[1] || '', spreadsheetId: standard?.[1] || '' };
+}
+
+function googleSheetCandidates(source, requestedGid = '0') {
+  const identity = sheetIdentity(source, requestedGid);
+  const candidates = [];
+  if (/output=csv|format=csv|tqx=out%3Acsv|tqx=out:csv/i.test(identity.url.toString())) candidates.push(new URL(identity.url));
+  if (identity.spreadsheetId) {
+    const exportUrl = new URL(`https://docs.google.com/spreadsheets/d/${identity.spreadsheetId}/export`);
+    exportUrl.searchParams.set('format', 'csv');
+    exportUrl.searchParams.set('gid', identity.gid);
+    candidates.push(exportUrl);
+    const gvizUrl = new URL(`https://docs.google.com/spreadsheets/d/${identity.spreadsheetId}/gviz/tq`);
+    gvizUrl.searchParams.set('tqx', 'out:csv');
+    gvizUrl.searchParams.set('gid', identity.gid);
+    candidates.push(gvizUrl);
   }
-  throw new Error('Não foi possível identificar o ID da planilha.');
+  if (identity.publishedId) {
+    const publishedUrl = new URL(`https://docs.google.com/spreadsheets/d/e/${identity.publishedId}/pub`);
+    publishedUrl.searchParams.set('output', 'csv');
+    publishedUrl.searchParams.set('single', 'true');
+    publishedUrl.searchParams.set('gid', identity.gid);
+    candidates.push(publishedUrl);
+  }
+  const unique = [];
+  const seen = new Set();
+  for (const candidate of candidates) {
+    const key = candidate.toString();
+    if (!seen.has(key)) { seen.add(key); unique.push(candidate); }
+  }
+  return { ...identity, candidates: unique };
 }
 
 async function fetchGoogleSheet(source, gid) {
-  const target = googleSheetCsvUrl(source, gid);
-  const response = await fetch(target, { redirect: 'follow', headers: { accept: 'text/csv,text/plain;q=0.9,*/*;q=0.1' } });
-  if (!response.ok) throw new Error(`Google Sheets respondeu com erro ${response.status}.`);
-  const text = await response.text();
-  if (/<!doctype html|<html/i.test(text) || /sign in|request access/i.test(text)) {
-    throw new Error('A planilha não está pública. Compartilhe como “qualquer pessoa com o link pode ver”.');
+  const identity = googleSheetCandidates(source, gid);
+  const attempts = [];
+  for (const target of identity.candidates) {
+    try {
+      const response = await fetch(target, {
+        redirect: 'follow',
+        headers: {
+          accept: 'text/csv,text/plain;q=0.9,*/*;q=0.1'
+        }
+      });
+      const text = await response.text();
+      attempts.push({ endpoint: target.pathname, status: response.status, contentType: response.headers.get('content-type') || '' });
+      if (!response.ok) continue;
+      if (/<!doctype html|<html/i.test(text) || /sign in|request access|solicitar acesso/i.test(text)) continue;
+      const parsed = rowsToItems(parseCsvRows(text));
+      return { ...parsed, sourceUrl: target.toString(), gid: identity.gid, attempts };
+    } catch (error) {
+      attempts.push({ endpoint: target.pathname, status: 0, error: error.message || 'falha de rede' });
+    }
   }
-  const parsed = rowsToItems(parseCsvRows(text));
-  return { ...parsed, sourceUrl: target.toString() };
+  const statusText = attempts.map(attempt => `${attempt.endpoint}: ${attempt.status || attempt.error}`).join(' | ');
+  throw new Error(`Não foi possível ler a planilha. Confirme “Qualquer pessoa com o link pode ver” e o GID da aba. ${statusText}`.trim());
 }
 
 function sanitizeRoom(value) {
@@ -247,7 +320,7 @@ export default {
       return json({
         ok: true,
         service: 'broadcast3d-cloudflare',
-        version: '0.5.1',
+        version: '0.6.0',
         realtime: 'durable-object-websocket',
         storage: 'durable-object-sqlite',
         authRequired: Boolean(String(env.CONTROL_TOKEN || '').trim())
@@ -268,18 +341,24 @@ export default {
 
     const cameraRoute = url.pathname.match(/^\/camera\/(1|2|3|4)\/?$/);
     if (cameraRoute) {
-      const room = sanitizeRoom(url.searchParams.get('room') || 'studio') || 'studio';
-      const target = new URL('/program.html', url.origin);
-      target.searchParams.set('room', room);
-      target.searchParams.set('camera', cameraRoute[1]);
-      return Response.redirect(target.toString(), 302);
+      const assetUrl = new URL('/program.html', url.origin);
+      return env.ASSETS.fetch(new Request(assetUrl.toString(), { method: 'GET', headers: request.headers }));
     }
 
     if (url.pathname === '/overlay' || url.pathname === '/program') {
+      const assetUrl = new URL('/program.html', url.origin);
+      return env.ASSETS.fetch(new Request(assetUrl.toString(), { method: 'GET', headers: request.headers }));
+    }
+
+    if (url.pathname === '/api/overlay-check') {
       const room = sanitizeRoom(url.searchParams.get('room') || 'studio') || 'studio';
-      const target = new URL('/program.html', url.origin);
-      target.searchParams.set('room', room);
-      return Response.redirect(target.toString(), 302);
+      try {
+        const stateResponse = await routeToRoom(new Request(`${url.origin}/api/state?room=${encodeURIComponent(room)}`), env, room);
+        const statePayload = await stateResponse.json();
+        return json({ ok: true, version: '0.6.0', room, hasState: Boolean(statePayload?.state), activeCamera: statePayload?.state?.activeCamera || 1, itemCount: statePayload?.state?.scene?.items?.length || 0 });
+      } catch (error) {
+        return json({ ok: false, error: error.message || 'Falha ao validar overlay.' }, 500);
+      }
     }
 
     const friendlyCutRoute = url.pathname.match(/^\/cut\/(1|2|3|4)\/?$/);
@@ -313,7 +392,8 @@ export default {
         /^\/api\/cut\/(1|2|3|4)$/.test(url.pathname) ||
         url.pathname === '/api/output/toggle' ||
         url.pathname === '/api/play' ||
-        url.pathname === '/api/play/reset';
+        url.pathname === '/api/play/reset' ||
+        url.pathname === '/api/sheets/sync';
 
       if (isWrite && !canWrite(request, env)) {
         return json({ ok: false, error: 'Chave de controle inválida.' }, 401, { 'www-authenticate': 'Bearer' });
@@ -376,6 +456,44 @@ export class BroadcastRoom extends DurableObject {
       return new Response(null, { status: 101, webSocket: client });
     }
 
+    if (pathname === '/api/sheets/sync' && (request.method === 'POST' || request.method === 'GET')) {
+      try {
+        const state = await this.getState();
+        let body = {};
+        if (request.method === 'POST') body = await request.json().catch(() => ({}));
+        const source = String(body.source || state.scene.dataSource.url || '').trim();
+        const gid = String(body.gid || state.scene.dataSource.gid || '0').replace(/[^0-9]/g, '') || '0';
+        const result = await fetchGoogleSheet(source, gid);
+        const previous = new Map(state.scene.items.map(item => [String(item.name).trim().toLowerCase(), item]));
+        state.scene.items = result.items.map(item => {
+          const old = previous.get(String(item.name).trim().toLowerCase());
+          return { ...item, imageUrl: item.imageUrl || old?.imageUrl || '' };
+        });
+        state.scene.generatedGraphVisible = true;
+        state.scene.dataSource = {
+          ...state.scene.dataSource,
+          type: 'google-sheets',
+          url: source,
+          gid: result.gid || gid,
+          autoRefresh: body.autoRefresh ?? state.scene.dataSource.autoRefresh,
+          refreshSeconds: Math.max(3, Math.min(3600, Number(body.refreshSeconds || state.scene.dataSource.refreshSeconds || 5))),
+          lastUpdated: new Date().toISOString(),
+          lastRowCount: state.scene.items.length,
+          lastError: '',
+          lastSourceUrl: result.sourceUrl || ''
+        };
+        state.scene.playback.mode = 'preview';
+        state.scene.playback.startedAt = 0;
+        await this.saveState(state, 'sheets');
+        return json({ ok: true, state, items: state.scene.items, mapping: result.mapping, sourceUrl: result.sourceUrl, attempts: result.attempts });
+      } catch (error) {
+        const state = await this.getState();
+        state.scene.dataSource.lastError = error.message || 'Falha ao sincronizar planilha.';
+        await this.ctx.storage.put('state', state);
+        return json({ ok: false, error: state.scene.dataSource.lastError }, 400);
+      }
+    }
+
     if (pathname === '/api/state' && request.method === 'GET') {
       return json({ ok: true, state: await this.getState() });
     }
@@ -405,6 +523,7 @@ export class BroadcastRoom extends DurableObject {
     if (pathname === '/api/play' && (request.method === 'POST' || request.method === 'GET')) {
       const state = await this.getState();
       const now = Date.now();
+      state.scene.playback.mode = 'playing';
       state.scene.playback.startedAt = now;
       state.scene.playback.playToken = now;
       state.outputVisible = true;
@@ -414,6 +533,7 @@ export class BroadcastRoom extends DurableObject {
 
     if (pathname === '/api/play/reset' && (request.method === 'POST' || request.method === 'GET')) {
       const state = await this.getState();
+      state.scene.playback.mode = 'prepared';
       state.scene.playback.startedAt = 0;
       state.scene.playback.resetToken = Date.now();
       await this.saveState(state, 'reset');

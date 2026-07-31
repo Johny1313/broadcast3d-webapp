@@ -1,5 +1,5 @@
-import { BroadcastRenderer } from './renderer3d.js?v=0.5.1';
-import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programUrl, setConnection } from './cloud.js?v=0.5.1';
+import { BroadcastRenderer } from './renderer3d.js?v=0.6.0';
+import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programPreviewUrl, programUrl, setConnection } from './cloud.js?v=0.6.0';
 
 const $ = id => document.getElementById(id);
 const DEG = Math.PI / 180;
@@ -31,7 +31,7 @@ function defaultLight(index = 1) {
 function normalizeState(input) {
   const next = structuredClone(input || {});
   const previousVersion = Number(next.version || 0);
-  next.version = 5;
+  next.version = 6;
   next.projectName ||= 'Projeto 3D - Eleições';
   next.activeCamera = Number(next.activeCamera || 1);
   next.selectedCamera = Number(next.selectedCamera || next.activeCamera || 1);
@@ -55,9 +55,9 @@ function normalizeState(input) {
   next.scene.model.rotation = { x: 0, y: 0, z: 0, ...(next.scene.model.rotation || {}) };
   next.scene.model.animation = { speed: 1, ...(next.scene.model.animation || {}) };
   next.scene.generatedGraphVisible = next.scene.generatedGraphVisible ?? true;
-  if (previousVersion > 0 && previousVersion < 5 && next.scene.model.url && next.scene.generatedGraphVisible === false) next.scene.generatedGraphVisible = true;
-  next.scene.playback = { startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4, ...(next.scene.playback || {}) };
-  next.scene.dataSource = { type: 'google-sheets', url: '', gid: '0', autoRefresh: true, refreshSeconds: 5, lastUpdated: '', lastRowCount: 0, ...(next.scene.dataSource || {}) };
+  if (previousVersion > 0 && previousVersion < 6 && next.scene.model.url && next.scene.generatedGraphVisible === false) next.scene.generatedGraphVisible = true;
+  next.scene.playback = { mode: 'preview', startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4, ...(next.scene.playback || {}) };
+  next.scene.dataSource = { type: 'google-sheets', url: '', gid: '0', autoRefresh: true, refreshSeconds: 5, lastUpdated: '', lastRowCount: 0, lastError: '', lastSourceUrl: '', ...(next.scene.dataSource || {}) };
   next.scene.guideOpacity = Number(next.scene.guideOpacity ?? 0.72);
 
   const defaults = [
@@ -371,9 +371,9 @@ function renderSheetControls() {
     ? `${Number(source.lastRowCount || state.scene.items.length)} linhas · GID ${source.gid || '0'}`
     : 'Nenhuma planilha conectada';
   $('sheetQuickStatus').textContent = summary;
-  if (!$('sheetStatus').dataset.busy) $('sheetStatus').textContent = connected
-    ? `Planilha configurada. ${summary}.`
-    : 'Nenhuma planilha conectada.';
+  if (!$('sheetStatus').dataset.busy) $('sheetStatus').textContent = source.lastError
+    ? source.lastError
+    : connected ? `Planilha configurada. ${summary}.` : 'Nenhuma planilha conectada.';
 
   const preview = $('sheetPreview');
   preview.innerHTML = '';
@@ -413,26 +413,27 @@ async function refreshGoogleSheet({ persist = true, silent = false } = {}) {
   }
   sheetBusy = true;
   $('sheetStatus').dataset.busy = '1';
-  $('sheetStatus').textContent = 'Lendo Google Sheets…';
+  $('sheetStatus').textContent = 'Lendo, validando e gerando o gráfico…';
   $('connectSheetButton').disabled = true;
   $('refreshSheetButton').disabled = true;
   try {
-    const params = new URLSearchParams({ source: source.url, gid: source.gid || '0' });
-    const result = await api(`/api/sheets?${params.toString()}`);
-    const previous = new Map(state.scene.items.map(item => [String(item.name).trim().toLowerCase(), item]));
-    state.scene.items = (result.items || []).map(item => {
-      const old = previous.get(String(item.name).trim().toLowerCase());
-      return { ...item, imageUrl: item.imageUrl || old?.imageUrl || '' };
+    const result = await api('/api/sheets/sync', {
+      method: 'POST',
+      body: JSON.stringify({
+        source: source.url,
+        gid: source.gid || '0',
+        autoRefresh: source.autoRefresh !== false,
+        refreshSeconds: source.refreshSeconds || 5
+      })
     });
-    source.lastUpdated = result.fetchedAt || new Date().toISOString();
-    source.lastRowCount = state.scene.items.length;
+    state = normalizeState(result.state);
+    state.scene.playback.mode = 'preview';
     renderer.setState(state);
-    renderBarItems();
-    renderSheetControls();
-    $('sheetStatus').textContent = `${state.scene.items.length} linhas atualizadas com sucesso.`;
-    if (persist) queueSave('Google Sheets atualizado');
-    else if (!silent) showToast('Google Sheets atualizado');
+    renderAll();
+    $('sheetStatus').textContent = `${state.scene.items.length} linhas carregadas. O gráfico foi criado; use PLAY para enviá-lo ao overlay.`;
+    if (!silent) showToast('Gráfico criado a partir do Google Sheets');
   } catch (error) {
+    state.scene.dataSource.lastError = error.message;
     $('sheetStatus').textContent = error.message;
     if (!silent) showToast(error.message);
   } finally {
@@ -682,6 +683,7 @@ function bindUploads() {
       state.scene.model.format = extension;
       state.scene.model.visible = true;
       state.scene.model.animation = { speed: 1 };
+      state.scene.playback.mode = 'preview';
       state.scene.playback.startedAt = 0;
       state.scene.playback.resetToken = Date.now();
       availableAnimations = [];
@@ -745,6 +747,7 @@ async function copyText(text, message = 'Link copiado') {
 function updateCloudLinks() {
   const room = getRoom();
   $('programUrl').value = programUrl(room);
+  if ($('programPreviewUrl')) $('programPreviewUrl').value = programPreviewUrl(room);
   $('toggleEndpoint').value = controlUrl('/api/output/toggle', room);
   if ($('playEndpoint')) $('playEndpoint').value = controlUrl('/play', room);
   if ($('resetEndpoint')) $('resetEndpoint').value = controlUrl('/reset', room);
@@ -778,7 +781,9 @@ function updateCloudLinks() {
 }
 
 async function loadRoom() {
-  const data = await api('/api/state');
+  let data;
+  try { data = await api('/api/state'); }
+  catch (error) { throw new Error(`Backend não encontrado. Publique como Cloudflare Worker com Durable Object, não como site estático/Pages. ${error.message}`); }
   state = normalizeState(data.state);
   renderer.setState(state);
   workingCamera = structuredClone(selectedCamera());
@@ -858,6 +863,15 @@ function bindActions() {
   });
   $('openProgramButton').addEventListener('click', () => window.open(programUrl(), 'broadcast3d-program'));
   $('openProgramUrlButton').addEventListener('click', () => window.open(programUrl(), 'broadcast3d-program'));
+  if ($('openProgramPreviewButton')) $('openProgramPreviewButton').addEventListener('click', () => window.open(programPreviewUrl(), 'broadcast3d-preview'));
+  if ($('copyProgramPreviewButton')) $('copyProgramPreviewButton').addEventListener('click', () => copyText(programPreviewUrl(), 'Link de teste copiado'));
+  if ($('testOverlayButton')) $('testOverlayButton').addEventListener('click', async () => {
+    try {
+      const result = await api('/api/overlay-check');
+      showToast(`Overlay OK · ${result.itemCount} itens · CAM ${result.activeCamera}`);
+      window.open(programPreviewUrl(), 'broadcast3d-preview');
+    } catch (error) { showToast(`Overlay indisponível: ${error.message}`); }
+  });
   $('copyProgramUrlButton').addEventListener('click', () => copyText(programUrl(), 'Link do overlay copiado'));
   $('copyToggleEndpointButton').addEventListener('click', () => copyText(controlUrl('/api/output/toggle'), 'Link de exibir/ocultar copiado'));
   $('copyPlayEndpointButton').addEventListener('click', () => copyText(controlUrl('/play'), 'Link de PLAY copiado'));

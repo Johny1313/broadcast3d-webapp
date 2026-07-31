@@ -1,18 +1,21 @@
-import { BroadcastRenderer } from './renderer3d.js?v=0.5.1';
-import { api, connectSocket, getRoom } from './cloud.js?v=0.5.1';
+import { BroadcastRenderer } from './renderer3d.js?v=0.6.0';
+import { api, connectSocket, getRoom } from './cloud.js?v=0.6.0';
 
 const canvas = document.getElementById('programCanvas');
 const renderer = new BroadcastRenderer(canvas, { interactive: false });
-const requestedCamera = Number(new URLSearchParams(location.search).get('camera'));
+const params = new URLSearchParams(location.search);
+const pathCamera = Number((location.pathname.match(/^\/camera\/(1|2|3|4)\/?$/) || [])[1]);
+const requestedCamera = Number(params.get('camera') || pathCamera);
 const fixedCamera = [1, 2, 3, 4].includes(requestedCamera) ? requestedCamera : null;
+const forcePreview = params.get('preview') === '1';
+const debugMode = params.get('debug') === '1';
 let state = null;
-let sheetTimer = null;
-let sheetBusy = false;
+let debugNode = null;
 
 function normalizeState(input) {
   const next = structuredClone(input || {});
   const previousVersion = Number(next.version || 0);
-  next.version = 5;
+  next.version = 6;
   next.activeCamera = Number(next.activeCamera || 1);
   next.outputVisible = next.outputVisible !== false;
   next.scene ||= {};
@@ -32,9 +35,9 @@ function normalizeState(input) {
   next.scene.model.rotation = { x: 0, y: 0, z: 0, ...(next.scene.model.rotation || {}) };
   next.scene.model.animation = { speed: 1, ...(next.scene.model.animation || {}) };
   next.scene.generatedGraphVisible = next.scene.generatedGraphVisible ?? true;
-  if (previousVersion > 0 && previousVersion < 5 && next.scene.model.url && next.scene.generatedGraphVisible === false) next.scene.generatedGraphVisible = true;
-  next.scene.playback = { startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4, ...(next.scene.playback || {}) };
-  next.scene.dataSource = { type: 'google-sheets', url: '', gid: '0', autoRefresh: true, refreshSeconds: 5, ...(next.scene.dataSource || {}) };
+  if (previousVersion > 0 && previousVersion < 6 && next.scene.model.url && next.scene.generatedGraphVisible === false) next.scene.generatedGraphVisible = true;
+  next.scene.playback = { mode: 'preview', startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4, ...(next.scene.playback || {}) };
+  next.scene.dataSource = { type: 'google-sheets', url: '', gid: '0', autoRefresh: true, refreshSeconds: 5, lastUpdated: '', lastRowCount: 0, lastError: '', lastSourceUrl: '', ...(next.scene.dataSource || {}) };
   next.cameras = Array.isArray(next.cameras) ? next.cameras : [];
   return next;
 }
@@ -44,41 +47,26 @@ function activeCamera() {
   return state.cameras.find(camera => Number(camera.id) === id) || state.cameras[0];
 }
 
+function showDebug(message, error = false) {
+  if (!debugMode) return;
+  if (!debugNode) {
+    debugNode = document.createElement('div');
+    debugNode.className = 'overlay-debug';
+    document.body.appendChild(debugNode);
+  }
+  debugNode.textContent = message;
+  debugNode.dataset.error = error ? '1' : '0';
+}
+
 function apply(nextState) {
   state = normalizeState(nextState);
+  if (forcePreview) {
+    state.scene.playback.mode = 'preview';
+    state.scene.playback.startedAt = 0;
+  }
   renderer.setState(state);
   renderer.setCamera(activeCamera());
-  scheduleSheetRefresh();
-}
-
-async function refreshSheet() {
-  const source = state?.scene?.dataSource;
-  if (sheetBusy || !source?.url) return;
-  sheetBusy = true;
-  try {
-    const params = new URLSearchParams({ source: source.url, gid: source.gid || '0' });
-    const result = await api(`/api/sheets?${params.toString()}`);
-    const previous = new Map(state.scene.items.map(item => [String(item.name).trim().toLowerCase(), item]));
-    state.scene.items = (result.items || []).map(item => {
-      const old = previous.get(String(item.name).trim().toLowerCase());
-      return { ...item, imageUrl: item.imageUrl || old?.imageUrl || '' };
-    });
-    renderer.setState(state);
-  } catch (error) {
-    console.warn('Google Sheets:', error.message);
-  } finally {
-    sheetBusy = false;
-  }
-}
-
-function scheduleSheetRefresh() {
-  clearInterval(sheetTimer);
-  sheetTimer = null;
-  const source = state?.scene?.dataSource;
-  if (!source?.url || source.autoRefresh === false) return;
-  const seconds = Math.max(3, Math.min(3600, Number(source.refreshSeconds || 5)));
-  refreshSheet();
-  sheetTimer = setInterval(refreshSheet, seconds * 1000);
+  showDebug(`Overlay OK · sala ${getRoom()} · CAM ${activeCamera()?.id || 1} · ${state.scene.items.length} itens`);
 }
 
 async function init() {
@@ -92,4 +80,4 @@ async function init() {
   });
 }
 
-init().catch(error => console.error(error));
+init().catch(error => { console.error(error); showDebug(`ERRO: ${error.message || error}`, true); });

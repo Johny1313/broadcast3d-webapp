@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Broadcast3D Cloud v0.5.1</title>
+  <title>Broadcast3D Cloud v0.6.0</title>
   <link rel="stylesheet" href="/styles.css?v=0.5.1">
   <script type="importmap">
   {
@@ -19,7 +19,7 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark">3D</div>
-        <div><strong>Broadcast3D Cloud <small class="version-badge">v0.5.1</small></strong><span>PLAY único para GLB + gráfico do Google Sheets · overlay transparente para vMix</span></div>
+        <div><strong>Broadcast3D Cloud <small class="version-badge">v0.6.0</small></strong><span>PLAY único para GLB + gráfico do Google Sheets · overlay transparente para vMix</span></div>
       </div>
       <div class="top-actions cloud-top-actions">
         <span id="connectionBadge" class="status-badge">Conectando</span>
@@ -263,11 +263,17 @@
           <button id="copyAllStreamDeckButton" class="button primary full" type="button">Copiar todos os links</button>
           <div id="streamDeckLinks" class="streamdeck-links"></div>
           <div class="divider"></div>
-          <label class="field">Overlay dinâmico para vMix<input id="programUrl" type="text" readonly></label>
+          <label class="field">Overlay LIVE para vMix — fica transparente até o PLAY<input id="programUrl" type="text" readonly></label>
           <div class="button-row">
-            <button id="copyProgramUrlButton" class="button secondary" type="button">Copiar link</button>
-            <button id="openProgramUrlButton" class="button secondary" type="button">Abrir</button>
+            <button id="copyProgramUrlButton" class="button secondary" type="button">Copiar LIVE</button>
+            <button id="openProgramUrlButton" class="button secondary" type="button">Abrir LIVE</button>
           </div>
+          <label class="field">Teste visual do overlay — mostra a cena final<input id="programPreviewUrl" type="text" readonly></label>
+          <div class="button-row">
+            <button id="copyProgramPreviewButton" class="button secondary" type="button">Copiar teste</button>
+            <button id="openProgramPreviewButton" class="button secondary" type="button">Abrir teste</button>
+          </div>
+          <button id="testOverlayButton" class="button primary full" type="button">Testar backend + abrir overlay</button>
           <label class="field">PLAY geral — GLB + gráfico<input id="playEndpoint" type="text" readonly></label>
           <button id="copyPlayEndpointButton" class="button primary full" type="button">Copiar link de PLAY</button>
           <label class="field">Preparar no tempo zero<input id="resetEndpoint" type="text" readonly></label>

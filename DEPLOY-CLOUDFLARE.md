@@ -1,12 +1,17 @@
-# Deploy — Cloudflare Workers + GitHub
+# Deploy correto — GitHub + Cloudflare Worker
 
-## Requisitos
+## Não usar Direct Upload de Pages
 
-- Conta Cloudflare.
-- Repositório GitHub.
-- Node.js 20 ou superior para teste local.
+O projeto não é apenas um site estático. Ele depende do Worker e do Durable Object. Publicar somente a pasta `public` faz a interface abrir, mas quebra:
 
-## Publicação pelo terminal
+- `/api/state`;
+- `/api/sheets/sync`;
+- `/overlay`;
+- `/camera/1` a `/camera/4`;
+- WebSocket;
+- links do Stream Deck.
+
+## Deploy pelo terminal
 
 ```bash
 npm install
@@ -15,60 +20,41 @@ npm run check
 npm run deploy
 ```
 
-O projeto publica:
+## Deploy automático pelo GitHub
 
-- arquivos estáticos da pasta `public`;
-- Worker da pasta `src`;
-- Durable Object `BroadcastRoom`;
-- WebSocket da sala;
-- armazenamento dos projetos e uploads;
-- proxy de leitura do Google Sheets em `/api/sheets`.
-
-## Publicação automática pelo GitHub
-
-Conecte o repositório no painel do Cloudflare Workers Builds.
-
-Comandos:
+No Cloudflare, conecte o repositório em **Workers & Pages → Workers Builds**.
 
 ```text
 Build command: npm run check
 Deploy command: npm run deploy
 ```
 
-Cadastre o secret opcional:
+O Cloudflare instala as dependências antes do build.
+
+Secret opcional:
 
 ```text
 CONTROL_TOKEN
 ```
 
-Quando o secret estiver ativo, os links de corte incluem `token=` automaticamente no painel.
+## Testes após publicar
 
-## URLs após o deploy
-
-Painel:
+Abra:
 
 ```text
-https://SEU-WORKER.workers.dev/?room=studio
+https://SEU-WORKER.workers.dev/api/health
 ```
 
-Overlay:
+A resposta deve conter:
+
+```json
+{"ok":true,"version":"0.6.0"}
+```
+
+Depois abra:
 
 ```text
-https://SEU-WORKER.workers.dev/program.html?room=studio
+https://SEU-WORKER.workers.dev/overlay?room=studio&preview=1&debug=1
 ```
 
-Câmera fixa:
-
-```text
-https://SEU-WORKER.workers.dev/camera/1?room=studio
-```
-
-Corte Stream Deck:
-
-```text
-https://SEU-WORKER.workers.dev/cut/1?room=studio
-```
-
-## Google Sheets
-
-A planilha precisa estar visível para qualquer pessoa com o link. A leitura é feita pelo Worker e não requer chave de API nesta versão.
+O canto inferior deve mostrar `Overlay OK`.

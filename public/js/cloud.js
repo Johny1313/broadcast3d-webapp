@@ -32,16 +32,22 @@ export function withRoom(path, room = getRoom()) {
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
-export function programUrl(room = getRoom()) {
-  const url = new URL('/program.html', location.origin);
+export function programUrl(room = getRoom(), options = {}) {
+  const url = new URL('/overlay', location.origin);
   url.searchParams.set('room', sanitizeRoom(room));
+  if (options.preview) url.searchParams.set('preview', '1');
+  if (options.debug) url.searchParams.set('debug', '1');
   return url.toString();
+}
+
+export function programPreviewUrl(room = getRoom()) {
+  return programUrl(room, { preview: true, debug: true });
 }
 
 
 export function fixedProgramUrl(cameraId, room = getRoom()) {
   const id = Math.max(1, Math.min(4, Number(cameraId) || 1));
-  const url = new URL('/program.html', location.origin);
+  const url = new URL('/overlay', location.origin);
   url.searchParams.set('room', sanitizeRoom(room));
   url.searchParams.set('camera', String(id));
   return url.toString();

@@ -202,7 +202,7 @@ function normalizedState(input) {
   state.scene.model.rotation = { x: 0, y: 0, z: 0, ...(state.scene.model.rotation || {}) };
   state.scene.model.animation = { speed: 1, ...(state.scene.model.animation || {}) };
   state.scene.generatedGraphVisible = state.scene.generatedGraphVisible ?? true;
-  if (previousVersion > 0 && previousVersion < 5 && state.scene.model.url && state.scene.generatedGraphVisible === false) state.scene.generatedGraphVisible = true;
+  if (previousVersion > 0 && previousVersion < 6 && state.scene.model.url && state.scene.generatedGraphVisible === false) state.scene.generatedGraphVisible = true;
   state.scene.playback = { startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4, ...(state.scene.playback || {}) };
   state.scene.dataSource = { type: 'google-sheets', url: '', gid: '0', autoRefresh: true, refreshSeconds: 5, lastUpdated: '', lastRowCount: 0, ...(state.scene.dataSource || {}) };
   return state;
@@ -680,7 +680,10 @@ export class BroadcastRenderer {
   }
 
   playbackElapsed() {
-    const startedAt = Number(this.state.scene.playback?.startedAt || 0);
+    const playback = this.state.scene.playback || {};
+    const mode = String(playback.mode || 'preview');
+    if (mode === 'preview') return this.interactive ? Number.POSITIVE_INFINITY : 0;
+    const startedAt = Number(playback.startedAt || 0);
     if (!startedAt) return 0;
     return Math.max(0, (Date.now() - startedAt) / 1000);
   }

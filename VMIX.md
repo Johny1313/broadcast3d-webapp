@@ -1,41 +1,38 @@
-# Uso no vMix
+# vMix — uso como overlay sobre o PGM
 
-## Overlay principal
-
-Adicione uma entrada:
+## Entrada principal
 
 ```text
 Add Input → Web Browser
 ```
 
-URL:
+Use o link LIVE:
 
 ```text
-https://SEU-WORKER.workers.dev/program.html?room=studio
+https://SEU-WORKER.workers.dev/overlay?room=studio
 ```
 
-Configuração recomendada:
+Configuração:
 
 ```text
 1920 × 1080
 Áudio desativado
-Fundo transparente
+Entrada usada como Overlay sobre o PGM
 ```
 
-Mantenha essa entrada em um Overlay sobre o PGM.
+O link LIVE fica transparente quando a cena está preparada. O conteúdo aparece quando o operador dispara o PLAY.
 
-## Quatro câmeras virtuais
+## Teste antes de adicionar ao vMix
 
-O overlay dinâmico usa a perspectiva ativa da sala. Os links de corte são:
+Use no Chrome ou Edge:
 
 ```text
-/cut/1?room=studio
-/cut/2?room=studio
-/cut/3?room=studio
-/cut/4?room=studio
+https://SEU-WORKER.workers.dev/overlay?room=studio&preview=1&debug=1
 ```
 
-As saídas fixas, úteis para conferência, são:
+Esse link ignora o estado de preparação e mostra o resultado final para conferência.
+
+## Câmeras virtuais
 
 ```text
 /camera/1?room=studio
@@ -44,27 +41,17 @@ As saídas fixas, úteis para conferência, são:
 /camera/4?room=studio
 ```
 
-## GLB animado
+## Stream Deck
 
-Ao importar um GLB, o gráfico nativo é ocultado e todas as animações incorporadas começam juntas no tempo zero. O botão de reinício envia um novo estado para a sala e reinicia também o overlay do vMix.
+```text
+/cut/1?room=studio&token=SUA_CHAVE
+/cut/2?room=studio&token=SUA_CHAVE
+/cut/3?room=studio&token=SUA_CHAVE
+/cut/4?room=studio&token=SUA_CHAVE
+/play?room=studio&token=SUA_CHAVE
+/reset?room=studio&token=SUA_CHAVE
+```
 
 ## Google Sheets
 
-O overlay consulta a planilha pública no intervalo configurado. Assim, os dados do gráfico nativo opcional continuam atualizando mesmo que o painel do operador seja fechado.
-
-
-## PLAY da cena
-
-O overlay permanece aberto no vMix. Para iniciar simultaneamente o GLB e o gráfico do Google Sheets, use:
-
-```text
-https://SEU-WORKER.workers.dev/play?room=studio&token=SUA_CHAVE
-```
-
-Para retornar ambos ao tempo zero:
-
-```text
-https://SEU-WORKER.workers.dev/reset?room=studio&token=SUA_CHAVE
-```
-
-As animações não entram em loop e o último frame permanece na tela.
+A conexão e a validação acontecem no painel do operador. Quando a leitura é concluída, os itens são salvos no estado da sala e enviados ao overlay por WebSocket.
