@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Broadcast3D Cloud v0.4.0</title>
-  <link rel="stylesheet" href="/styles.css?v=0.4.0">
+  <title>Broadcast3D Cloud v0.5.0</title>
+  <link rel="stylesheet" href="/styles.css?v=0.5.0">
   <script type="importmap">
   {
     "imports": {
@@ -19,7 +19,7 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark">3D</div>
-        <div><strong>Broadcast3D Cloud <small class="version-badge">v0.4.0</small></strong><span>GLB animado + Google Sheets + overlay transparente para vMix</span></div>
+        <div><strong>Broadcast3D Cloud <small class="version-badge">v0.5.0</small></strong><span>PLAY único para GLB + gráfico do Google Sheets · overlay transparente para vMix</span></div>
       </div>
       <div class="top-actions cloud-top-actions">
         <span id="connectionBadge" class="status-badge">Conectando</span>
@@ -38,8 +38,8 @@
     <section class="camera-strip" id="cameraStrip" aria-label="Presets de câmera"></section>
 
     <section class="quick-actions workflow-actions" aria-label="Fluxo principal">
-      <div class="quick-actions-title"><strong>Fluxo principal</strong><span>1. Modelo · 2. Dados · 3. Luzes · 4. Links</span></div>
-      <button id="quickModelButton" class="quick-action primary-action" type="button"><span class="quick-icon">1</span><span><strong>Importar GLB / OBJ</strong><small>O GLB inicia todas as animações</small></span></button>
+      <div class="quick-actions-title"><strong>Fluxo principal</strong><span>1. Modelo · 2. Dados · 3. PLAY · 4. Câmeras</span></div>
+      <button id="quickModelButton" class="quick-action primary-action" type="button"><span class="quick-icon">1</span><span><strong>Importar GLB / OBJ</strong><small>Todos os clipes aguardam o PLAY</small></span></button>
       <button id="quickSheetsButton" class="quick-action" type="button"><span class="quick-icon">2</span><span><strong>Google Sheets</strong><small>Substitui a importação por CSV</small></span></button>
       <button id="quickLightsButton" class="quick-action" type="button"><span class="quick-icon">3</span><span><strong>Ajustar luzes</strong><small>Ambiente e pontos de luz</small></span></button>
       <button id="quickLinksButton" class="quick-action" type="button"><span class="quick-icon">4</span><span><strong>Câmeras / Stream Deck</strong><small>Links reais CAM 1 a CAM 4</small></span></button>
@@ -52,7 +52,7 @@
           <button id="leftModelButton" class="button primary full model-import-main" type="button">+ IMPORTAR MODELO 3D</button>
           <div id="modelQuickStatus" class="file-status prominent">Nenhum modelo carregado</div>
           <button id="openModelControlsButton" class="button secondary full" type="button">Abrir controles do modelo</button>
-          <p class="helper">Ao importar um modelo, o gráfico nativo é ocultado automaticamente. Em GLB, todos os clipes são reproduzidos juntos desde o tempo zero.</p>
+          <p class="helper">GLB e gráfico do Google Sheets podem ficar juntos. O PLAY inicia os dois; ao terminar, todos os elementos permanecem na tela.</p>
         </section>
 
         <section class="panel-section sheets-spotlight">
@@ -94,7 +94,7 @@
           <div><span>Render</span><b>Three.js / WebGL 2</b></div>
           <div><span>Saída</span><b>Alpha transparente</b></div>
           <div><span>Dados</span><b>Google Sheets</b></div>
-          <div><span>Animação</span><b>Todos os clipes GLB</b></div>
+          <div><span>Animação</span><b>PLAY único · sem loop</b></div>
         </section>
       </aside>
 
@@ -116,7 +116,11 @@
         </div>
         <div class="program-bar">
           <div class="program-status"><span class="dot red"></span><strong>PROGRAMA</strong><span id="programCameraLabel">CAM 1</span></div>
-          <div class="program-controls">
+          <div class="program-controls playback-program-controls">
+            <span id="playbackStatusPill" class="pill">PRONTO</span>
+            <span id="playbackTime" class="playback-time">0.0 / 0.0 s</span>
+            <button id="playSceneButton" class="button play-button" type="button">▶ PLAY</button>
+            <button id="resetScenePlaybackButton" class="button secondary" type="button">Preparar</button>
             <button id="toggleOutputButton" class="button danger" type="button">Ocultar cena</button>
             <button class="cut-button" data-cut="1" type="button">CUT 1</button>
             <button class="cut-button" data-cut="2" type="button">CUT 2</button>
@@ -141,7 +145,7 @@
           <label class="upload-drop model-upload-drop" for="modelInput"><strong>IMPORTAR GLB OU OBJ</strong><span>GLB: materiais, texturas e animações · limite 48 MB</span></label>
           <input id="modelInput" type="file" accept=".glb,.obj,model/gltf-binary,text/plain" hidden>
           <div id="modelFileName" class="file-status">Nenhum modelo carregado</div>
-          <div class="model-import-rule">Ao importar: <b>modelo visível</b> · <b>gráfico nativo oculto</b> · <b>todas as animações iniciadas juntas</b>.</div>
+          <div class="model-import-rule">Ao importar: <b>modelo visível</b> · <b>gráfico preservado</b> · <b>animações aguardando o PLAY</b>.</div>
           <label class="switch-row"><input id="modelVisible" type="checkbox"><span>Exibir modelo</span></label>
 
           <label class="range-field">Posição X <output id="modelXOutput"></output><input id="modelX" type="range" min="-12" max="12" step="0.01"></label>
@@ -155,12 +159,10 @@
           <div class="divider"></div>
           <div class="section-title"><span>Animações do GLB</span><span id="animationCount" class="pill">0 CLIPES</span></div>
           <div id="animationList" class="animation-list"><span>Nenhuma animação detectada.</span></div>
-          <label class="switch-row"><input id="modelAnimationPlay" type="checkbox"><span>Reproduzir todas as animações</span></label>
-          <label class="switch-row"><input id="modelAnimationLoop" type="checkbox"><span>Repetir cada clipe respeitando sua duração</span></label>
-          <label class="range-field">Velocidade global <output id="modelAnimationSpeedOutput"></output><input id="modelAnimationSpeed" type="range" min="0.1" max="3" step="0.05"></label>
-          <button id="restartAnimationsButton" class="button secondary full" type="button">Reiniciar todas no tempo zero</button>
+          <label class="range-field">Velocidade do GLB <output id="modelAnimationSpeedOutput"></output><input id="modelAnimationSpeed" type="range" min="0.1" max="3" step="0.05"></label>
+          <div class="playback-callout"><strong>Controle unificado</strong><span>Use o botão PLAY abaixo da prévia. Todos os clipes começam juntos no tempo zero, executam uma vez e mantêm o último frame.</span></div>
           <button id="removeModelButton" class="button danger full" type="button">Remover modelo</button>
-          <p class="helper">Os clipes não são separados em camadas. Todos usam o mesmo relógio global, mas preservam os keyframes e a duração definidos no GLB.</p>
+          <p class="helper">Não existe loop nem seleção por camada. As durações e os keyframes internos do GLB são preservados.</p>
         </section>
 
         <section class="tab-panel" data-panel="camera">
@@ -228,7 +230,12 @@
         <section class="tab-panel" data-panel="graph">
           <div class="section-title"><span>Gráfico nativo opcional</span><span id="graphVisibilityPill" class="pill">VISÍVEL</span></div>
           <label class="switch-row prominent-switch"><input id="generatedGraphVisible" type="checkbox"><span>Exibir base PNG, barras, textos e imagens</span></label>
-          <p class="helper">Este gráfico é ocultado automaticamente quando um GLB ou OBJ é importado. Os dados continuam sendo atualizados pelo Google Sheets.</p>
+          <p class="helper">O gráfico pode ser exibido junto com o GLB. O mesmo PLAY inicia ambos e mantém o resultado final em tela.</p>
+          <div class="divider"></div>
+          <div class="section-title"><span>Animação do gráfico</span><span class="pill">TIMELINE</span></div>
+          <label class="range-field">Começar após <output id="graphAnimationStartOutput"></output><input id="graphAnimationStart" type="range" min="0" max="15" step="0.1"></label>
+          <label class="range-field">Duração da entrada <output id="graphAnimationDurationOutput"></output><input id="graphAnimationDuration" type="range" min="0.2" max="8" step="0.1"></label>
+          <p class="helper">O tempo é contado a partir do PLAY. A base aparece primeiro; depois as barras crescem e as imagens e textos entram. No final, tudo permanece visível.</p>
           <div class="divider"></div>
           <div class="section-title"><span>Base PNG extrudada</span></div>
           <label class="upload-drop" for="baseInput"><strong>Carregar PNG transparente</strong><span>A silhueta vira uma base extrudada</span></label>
@@ -261,6 +268,10 @@
             <button id="copyProgramUrlButton" class="button secondary" type="button">Copiar link</button>
             <button id="openProgramUrlButton" class="button secondary" type="button">Abrir</button>
           </div>
+          <label class="field">PLAY geral — GLB + gráfico<input id="playEndpoint" type="text" readonly></label>
+          <button id="copyPlayEndpointButton" class="button primary full" type="button">Copiar link de PLAY</button>
+          <label class="field">Preparar no tempo zero<input id="resetEndpoint" type="text" readonly></label>
+          <button id="copyResetEndpointButton" class="button secondary full" type="button">Copiar link de preparar</button>
           <label class="field">Exibir/ocultar cena<input id="toggleEndpoint" type="text" readonly></label>
           <button id="copyToggleEndpointButton" class="button secondary full" type="button">Copiar link de exibir/ocultar</button>
         </section>
@@ -280,6 +291,6 @@
     </div>
   </dialog>
 
-  <script type="module" src="/js/operator.js?v=0.4.0"></script>
+  <script type="module" src="/js/operator.js?v=0.5.0"></script>
 </body>
 </html>

@@ -51,3 +51,20 @@ Ao importar um GLB, o gráfico nativo é ocultado e todas as animações incorpo
 ## Google Sheets
 
 O overlay consulta a planilha pública no intervalo configurado. Assim, os dados do gráfico nativo opcional continuam atualizando mesmo que o painel do operador seja fechado.
+
+
+## PLAY da cena
+
+O overlay permanece aberto no vMix. Para iniciar simultaneamente o GLB e o gráfico do Google Sheets, use:
+
+```text
+https://SEU-WORKER.workers.dev/play?room=studio&token=SUA_CHAVE
+```
+
+Para retornar ambos ao tempo zero:
+
+```text
+https://SEU-WORKER.workers.dev/reset?room=studio&token=SUA_CHAVE
+```
+
+As animações não entram em loop e o último frame permanece na tela.

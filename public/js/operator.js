@@ -1,5 +1,5 @@
-import { BroadcastRenderer } from './renderer3d.js?v=0.4.0';
-import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programUrl, setConnection } from './cloud.js?v=0.4.0';
+import { BroadcastRenderer } from './renderer3d.js?v=0.5.0';
+import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programUrl, setConnection } from './cloud.js?v=0.5.0';
 
 const $ = id => document.getElementById(id);
 const DEG = Math.PI / 180;
@@ -30,7 +30,8 @@ function defaultLight(index = 1) {
 
 function normalizeState(input) {
   const next = structuredClone(input || {});
-  next.version = 4;
+  const previousVersion = Number(next.version || 0);
+  next.version = 5;
   next.projectName ||= 'Projeto 3D - Eleições';
   next.activeCamera = Number(next.activeCamera || 1);
   next.selectedCamera = Number(next.selectedCamera || next.activeCamera || 1);
@@ -47,13 +48,15 @@ function normalizeState(input) {
     position: { x: 0, y: 0, z: 0 },
     rotation: { x: 0, y: 0, z: 0 },
     scale: 1,
-    animation: { play: true, loop: true, speed: 1, restartToken: 0 },
+    animation: { speed: 1 },
     ...(next.scene.model || {})
   };
   next.scene.model.position = { x: 0, y: 0, z: 0, ...(next.scene.model.position || {}) };
   next.scene.model.rotation = { x: 0, y: 0, z: 0, ...(next.scene.model.rotation || {}) };
-  next.scene.model.animation = { play: true, loop: true, speed: 1, restartToken: 0, ...(next.scene.model.animation || {}) };
-  next.scene.generatedGraphVisible = next.scene.generatedGraphVisible ?? !next.scene.model.url;
+  next.scene.model.animation = { speed: 1, ...(next.scene.model.animation || {}) };
+  next.scene.generatedGraphVisible = next.scene.generatedGraphVisible ?? true;
+  if (previousVersion > 0 && previousVersion < 5 && next.scene.model.url && next.scene.generatedGraphVisible === false) next.scene.generatedGraphVisible = true;
+  next.scene.playback = { startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4, ...(next.scene.playback || {}) };
   next.scene.dataSource = { type: 'google-sheets', url: '', gid: '0', autoRefresh: true, refreshSeconds: 5, lastUpdated: '', lastRowCount: 0, ...(next.scene.dataSource || {}) };
   next.scene.guideOpacity = Number(next.scene.guideOpacity ?? 0.72);
 
@@ -254,6 +257,9 @@ function renderSceneControls() {
   $('keyLight').value = state.scene.lighting.key;
   $('shadowOpacity').value = state.scene.lighting.shadowOpacity;
   $('generatedGraphVisible').checked = state.scene.generatedGraphVisible !== false;
+  $('graphAnimationStart').value = state.scene.playback.graphStart;
+  $('graphAnimationDuration').value = state.scene.playback.graphDuration;
+  renderPlaybackControls();
   renderSheetControls();
   suppressInputs = false;
   renderReadouts();
@@ -276,7 +282,9 @@ function renderReadouts() {
     ['labelScaleOutput', Number(state.scene.bars.labelScale).toFixed(2)],
     ['ambientLightOutput', Number(state.scene.lighting.ambient).toFixed(2)],
     ['keyLightOutput', Number(state.scene.lighting.key).toFixed(2)],
-    ['shadowOpacityOutput', Number(state.scene.lighting.shadowOpacity).toFixed(2)]
+    ['shadowOpacityOutput', Number(state.scene.lighting.shadowOpacity).toFixed(2)],
+    ['graphAnimationStartOutput', `${Number(state.scene.playback.graphStart).toFixed(1)} s`],
+    ['graphAnimationDurationOutput', `${Number(state.scene.playback.graphDuration).toFixed(1)} s`]
   ];
   pairs.forEach(([id, value]) => { if ($(id)) $(id).textContent = value; });
   $('programCameraLabel').textContent = `CAM ${state.activeCamera}`;
@@ -284,8 +292,25 @@ function renderReadouts() {
   const graphVisible = state.scene.generatedGraphVisible !== false;
   if ($('graphVisibilityPill')) $('graphVisibilityPill').textContent = graphVisible ? 'VISÍVEL' : 'OCULTO';
   if ($('graphVisibilityPill')) $('graphVisibilityPill').className = `pill ${graphVisible ? 'ready' : ''}`;
-  if ($('sceneModeBadge')) $('sceneModeBadge').textContent = state.scene.model.url ? `MODO: MODELO ${String(state.scene.model.format || '').toUpperCase()}` : 'MODO: GRÁFICO NATIVO';
+  if ($('sceneModeBadge')) {
+    const hasModel = Boolean(state.scene.model.url && state.scene.model.visible);
+    $('sceneModeBadge').textContent = hasModel && graphVisible ? `MODO: ${String(state.scene.model.format || 'GLB').toUpperCase()} + GRÁFICO` : hasModel ? `MODO: MODELO ${String(state.scene.model.format || '').toUpperCase()}` : 'MODO: GRÁFICO NATIVO';
+  }
   document.querySelectorAll('.cut-button').forEach(button => button.classList.toggle('active', Number(button.dataset.cut) === state.activeCamera));
+}
+
+function renderPlaybackControls() {
+  const playback = state.scene.playback;
+  const elapsed = playback.startedAt ? Math.max(0, (Date.now() - Number(playback.startedAt)) / 1000) : 0;
+  const glbDuration = availableAnimations.reduce((maximum, clip) => Math.max(maximum, Number(clip.duration || 0) / Math.max(0.01, Number(state.scene.model.animation.speed || 1))), 0);
+  const graphEnd = Number(playback.graphStart || 0) + Number(playback.graphDuration || 0);
+  const total = Math.max(glbDuration, graphEnd);
+  const status = !playback.startedAt ? 'PRONTO' : elapsed >= total ? 'FINAL FIXO' : 'REPRODUZINDO';
+  if ($('playbackStatusPill')) {
+    $('playbackStatusPill').textContent = status;
+    $('playbackStatusPill').className = `pill ${status === 'REPRODUZINDO' ? 'ready' : ''}`;
+  }
+  if ($('playbackTime')) $('playbackTime').textContent = `${Math.min(elapsed, total || elapsed).toFixed(1)} / ${total.toFixed(1)} s`;
 }
 
 function renderBarItems() {
@@ -435,8 +460,6 @@ function renderModelControls() {
     $(id).value = value;
     $(`${id}Output`).textContent = `${Number(value).toFixed(digits)}${suffix}`;
   });
-  $('modelAnimationPlay').checked = model.animation.play !== false;
-  $('modelAnimationLoop').checked = model.animation.loop !== false;
 
   const list = $('animationList');
   list.innerHTML = '';
@@ -576,7 +599,9 @@ function bindSceneInputs() {
     ['modelVisible', 'scene.model.visible', 'checked'],
     ['modelX', 'scene.model.position.x', 'number'], ['modelY', 'scene.model.position.y', 'number'], ['modelZ', 'scene.model.position.z', 'number'],
     ['modelRotationX', 'scene.model.rotation.x', 'number'], ['modelRotationY', 'scene.model.rotation.y', 'number'], ['modelRotationZ', 'scene.model.rotation.z', 'number'], ['modelScale', 'scene.model.scale', 'number'],
-    ['modelAnimationPlay', 'scene.model.animation.play', 'checked'], ['modelAnimationLoop', 'scene.model.animation.loop', 'checked'], ['modelAnimationSpeed', 'scene.model.animation.speed', 'number']
+    ['modelAnimationSpeed', 'scene.model.animation.speed', 'number'],
+    ['graphAnimationStart', 'scene.playback.graphStart', 'number'], ['graphAnimationDuration', 'scene.playback.graphDuration', 'number'],
+    ['generatedGraphVisible', 'scene.generatedGraphVisible', 'checked']
   ];
   inputs.forEach(([id, path, type]) => $(id).addEventListener('input', event => {
     if (suppressInputs) return;
@@ -656,13 +681,14 @@ function bindUploads() {
       state.scene.model.name = file.name;
       state.scene.model.format = extension;
       state.scene.model.visible = true;
-      state.scene.model.animation = { play: true, loop: true, speed: 1, restartToken: Date.now() };
-      state.scene.generatedGraphVisible = false;
+      state.scene.model.animation = { speed: 1 };
+      state.scene.playback.startedAt = 0;
+      state.scene.playback.resetToken = Date.now();
       availableAnimations = [];
       renderer.setState(state);
       renderAll();
       openPanel('model');
-      queueSave(`${extension.toUpperCase()} importado · gráfico nativo ocultado`);
+      queueSave(`${extension.toUpperCase()} importado · pronto para PLAY conjunto`);
     } catch (error) {
       showToast(error.message);
     } finally {
@@ -680,13 +706,12 @@ function bindUploads() {
     state.scene.model = {
       url: '', name: '', format: '', visible: true,
       position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: 1,
-      animation: { play: true, loop: true, speed: 1, restartToken: 0 }
+      animation: { speed: 1 }
     };
-    state.scene.generatedGraphVisible = true;
     availableAnimations = [];
     renderer.setState(state);
     renderAll();
-    queueSave('Modelo removido · gráfico nativo exibido');
+    queueSave('Modelo removido');
   });
 }
 
@@ -721,6 +746,8 @@ function updateCloudLinks() {
   const room = getRoom();
   $('programUrl').value = programUrl(room);
   $('toggleEndpoint').value = controlUrl('/api/output/toggle', room);
+  if ($('playEndpoint')) $('playEndpoint').value = controlUrl('/play', room);
+  if ($('resetEndpoint')) $('resetEndpoint').value = controlUrl('/reset', room);
   $('roomInput').value = room;
   $('tokenInput').value = getToken();
   $('roomBadge').textContent = `SALA ${room.toUpperCase()}`;
@@ -833,6 +860,8 @@ function bindActions() {
   $('openProgramUrlButton').addEventListener('click', () => window.open(programUrl(), 'broadcast3d-program'));
   $('copyProgramUrlButton').addEventListener('click', () => copyText(programUrl(), 'Link do overlay copiado'));
   $('copyToggleEndpointButton').addEventListener('click', () => copyText(controlUrl('/api/output/toggle'), 'Link de exibir/ocultar copiado'));
+  $('copyPlayEndpointButton').addEventListener('click', () => copyText(controlUrl('/play'), 'Link de PLAY copiado'));
+  $('copyResetEndpointButton').addEventListener('click', () => copyText(controlUrl('/reset'), 'Link de preparar copiado'));
   $('copyAllStreamDeckButton').addEventListener('click', () => {
     const lines = [];
     for (let id = 1; id <= 4; id += 1) {
@@ -840,6 +869,8 @@ function bindActions() {
       lines.push(`CAM ${id} - VIRTUAL: ${cameraUrl(id)}`);
     }
     lines.push(`OVERLAY DINÂMICO: ${programUrl()}`);
+    lines.push(`PLAY GERAL: ${controlUrl('/play')}`);
+    lines.push(`PREPARAR / RESET: ${controlUrl('/reset')}`);
     lines.push(`EXIBIR/OCULTAR: ${controlUrl('/api/output/toggle')}`);
     copyText(lines.join('\n'), 'Todos os links foram copiados');
   });
@@ -859,13 +890,21 @@ function bindActions() {
       showToast('Projeto inválido');
     }
   });
-  $('restartAnimationsButton').addEventListener('click', () => {
-    state.scene.model.animation.play = true;
-    state.scene.model.animation.restartToken = Date.now();
-    $('modelAnimationPlay').checked = true;
-    renderer.setState(state);
-    queueSave('Animações reiniciadas no tempo zero');
-    showToast(availableAnimations.length ? 'Todas as animações reiniciadas' : 'O modelo não possui animações');
+  $('playSceneButton').addEventListener('click', async () => {
+    try {
+      await api('/api/play', { method: 'POST', body: '{}' });
+      showToast('PLAY: GLB e gráfico iniciados juntos');
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+  $('resetScenePlaybackButton').addEventListener('click', async () => {
+    try {
+      await api('/api/play/reset', { method: 'POST', body: '{}' });
+      showToast('Cena preparada no tempo zero');
+    } catch (error) {
+      showToast(error.message);
+    }
   });
 
   $('addLightButton').addEventListener('click', () => {
@@ -878,6 +917,7 @@ function bindActions() {
 
   window.addEventListener('keydown', event => {
     if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) && ['1', '2', '3', '4'].includes(event.key)) cutCamera(Number(event.key));
+    if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) && event.code === 'Space') { event.preventDefault(); $('playSceneButton').click(); }
   });
 }
 
@@ -904,6 +944,7 @@ async function init() {
   $('previewCanvas').addEventListener('model-info', event => {
     availableAnimations = event.detail.animations || [];
     renderModelControls();
+    renderPlaybackControls();
   });
   $('previewCanvas').addEventListener('model-error', event => showToast(event.detail.message));
   bindTabs();
@@ -913,6 +954,7 @@ async function init() {
   bindCloudControls();
   bindSheetControls();
   bindActions();
+  setInterval(() => { if (state) renderPlaybackControls(); }, 250);
   try {
     await loadRoom();
   } catch (error) {

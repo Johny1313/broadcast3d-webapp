@@ -17,7 +17,7 @@ function json(data, status = 200, extraHeaders = {}) {
 
 function defaultState() {
   return {
-    version: 4,
+    version: 5,
     projectName: 'Projeto 3D - Eleições',
     activeCamera: 1,
     selectedCamera: 1,
@@ -55,9 +55,10 @@ function defaultState() {
         position: { x: 0, y: 0, z: 0 },
         rotation: { x: 0, y: 0, z: 0 },
         scale: 1,
-        animation: { play: true, loop: true, speed: 1, restartToken: 0 }
+        animation: { speed: 1 }
       },
       generatedGraphVisible: true,
+      playback: { startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4 },
       dataSource: {
         type: 'google-sheets',
         url: '',
@@ -81,7 +82,8 @@ function defaultState() {
 function normalizeState(input) {
   const defaults = defaultState();
   const state = structuredClone(input && typeof input === 'object' ? input : defaults);
-  state.version = 4;
+  const previousVersion = Number(state.version || 0);
+  state.version = 5;
   state.projectName ||= defaults.projectName;
   state.activeCamera = Number(state.activeCamera || 1);
   state.selectedCamera = Number(state.selectedCamera || state.activeCamera || 1);
@@ -97,7 +99,9 @@ function normalizeState(input) {
   state.scene.model.position = { ...defaults.scene.model.position, ...(state.scene.model.position || {}) };
   state.scene.model.rotation = { ...defaults.scene.model.rotation, ...(state.scene.model.rotation || {}) };
   state.scene.model.animation = { ...defaults.scene.model.animation, ...(state.scene.model.animation || {}) };
-  state.scene.generatedGraphVisible = state.scene.generatedGraphVisible ?? !state.scene.model.url;
+  state.scene.generatedGraphVisible = state.scene.generatedGraphVisible ?? true;
+  if (previousVersion > 0 && previousVersion < 5 && state.scene.model.url && state.scene.generatedGraphVisible === false) state.scene.generatedGraphVisible = true;
+  state.scene.playback = { ...defaults.scene.playback, ...(state.scene.playback || {}) };
   state.scene.dataSource = { ...defaults.scene.dataSource, ...(state.scene.dataSource || {}) };
   state.scene.guideOpacity = Number(state.scene.guideOpacity ?? defaults.scene.guideOpacity);
   const cameras = Array.isArray(state.cameras) ? state.cameras : [];
@@ -243,7 +247,7 @@ export default {
       return json({
         ok: true,
         service: 'broadcast3d-cloudflare',
-        version: '0.4.0',
+        version: '0.5.0',
         realtime: 'durable-object-websocket',
         storage: 'durable-object-sqlite',
         authRequired: Boolean(String(env.CONTROL_TOKEN || '').trim())
@@ -289,6 +293,17 @@ export default {
       return routeToRoom(rewritten, env, room);
     }
 
+    if (url.pathname === '/play' || url.pathname === '/reset') {
+      const room = sanitizeRoom(url.searchParams.get('room') || 'studio');
+      if (!room) return json({ ok: false, error: 'Sala inválida.' }, 400);
+      if (!canWrite(request, env)) return json({ ok: false, error: 'Chave de controle inválida.' }, 401);
+      const targetPath = url.pathname === '/play' ? '/api/play' : '/api/play/reset';
+      const rewrittenUrl = new URL(targetPath, url.origin);
+      rewrittenUrl.searchParams.set('room', room);
+      const rewritten = new Request(rewrittenUrl.toString(), { method: 'GET', headers: request.headers });
+      return routeToRoom(rewritten, env, room);
+    }
+
     if (url.pathname.startsWith('/api/')) {
       const room = sanitizeRoom(url.searchParams.get('room'));
       if (!room) return json({ ok: false, error: 'Sala inválida. Use letras, números, hífen ou underline.' }, 400);
@@ -296,7 +311,9 @@ export default {
       const isWrite =
         request.method !== 'GET' && request.method !== 'HEAD' ||
         /^\/api\/cut\/(1|2|3|4)$/.test(url.pathname) ||
-        url.pathname === '/api/output/toggle';
+        url.pathname === '/api/output/toggle' ||
+        url.pathname === '/api/play' ||
+        url.pathname === '/api/play/reset';
 
       if (isWrite && !canWrite(request, env)) {
         return json({ ok: false, error: 'Chave de controle inválida.' }, 401, { 'www-authenticate': 'Bearer' });
@@ -383,6 +400,24 @@ export class BroadcastRoom extends DurableObject {
       state.outputVisible = true;
       await this.saveState(state, 'cut');
       return json({ ok: true, activeCamera: id });
+    }
+
+    if (pathname === '/api/play' && (request.method === 'POST' || request.method === 'GET')) {
+      const state = await this.getState();
+      const now = Date.now();
+      state.scene.playback.startedAt = now;
+      state.scene.playback.playToken = now;
+      state.outputVisible = true;
+      await this.saveState(state, 'play');
+      return json({ ok: true, startedAt: now });
+    }
+
+    if (pathname === '/api/play/reset' && (request.method === 'POST' || request.method === 'GET')) {
+      const state = await this.getState();
+      state.scene.playback.startedAt = 0;
+      state.scene.playback.resetToken = Date.now();
+      await this.saveState(state, 'reset');
+      return json({ ok: true });
     }
 
     if (pathname === '/api/output/toggle' && (request.method === 'POST' || request.method === 'GET')) {

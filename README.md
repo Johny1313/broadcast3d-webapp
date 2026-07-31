@@ -1,141 +1,98 @@
-# Broadcast3D Cloud v0.4.0
+# Broadcast3D Cloud v0.5.0
 
-Webapp para renderizar uma cena 3D com fundo transparente sobre o PGM do vMix, usando GitHub + Cloudflare Workers.
+Webapp de overlay 3D transparente para vMix, publicado por GitHub e Cloudflare Workers.
 
-## Fluxo principal
+## Principais recursos
 
-1. Importe um modelo **GLB** ou **OBJ**.
-2. Ajuste a posição, rotação, escala e iluminação.
-3. Salve os quatro enquadramentos virtuais.
-4. Copie os links reais de câmera e corte para vMix/Stream Deck.
-5. Conecte um Google Sheets público para atualizar o gráfico nativo opcional.
+- Importação de GLB animado e OBJ estático, até 48 MB.
+- Quatro câmeras virtuais com enquadramentos independentes.
+- Google Sheets como fonte do gráfico nativo.
+- Base PNG extrudada, barras, imagens e textos.
+- Pontos de luz configuráveis.
+- Saída `program.html` com alpha transparente para o Browser Input do vMix.
+- Links de corte, câmeras, PLAY e preparação para Stream Deck.
 
-## Mudanças da versão 0.4.0
+## Playback unificado
 
-- Interface reorganizada em seis áreas claras: Modelo, Câmeras, Luzes, Sheets, Gráfico e Links.
-- Upload GLB/OBJ sempre visível no topo, coluna esquerda e painel Modelo.
-- Ao importar GLB ou OBJ:
-  - o modelo fica visível;
-  - o gráfico nativo é ocultado automaticamente;
-  - o modelo é apoiado diretamente no chão;
-  - o painel abre nos controles do modelo.
-- Em arquivos GLB, **todos os clipes de animação são iniciados simultaneamente no tempo zero**.
-- Cada clipe mantém seus próprios keyframes e duração.
-- Controles globais de play/pausa, loop, velocidade e reinício no tempo zero.
-- Não existe seleção de animação por camada ou por clipe.
-- Importação de CSV removida da interface.
-- Integração com Google Sheets por link público.
-- Atualização manual ou automática, com intervalo configurável.
-- Colunas reconhecidas automaticamente:
-  - `nome` e `valor` — obrigatórias;
-  - `cor` e `imagem` — opcionais.
-- O overlay também consulta o Sheets, portanto pode atualizar mesmo sem o painel do operador aberto.
-- Links amigáveis e reais:
-  - `/camera/1` até `/camera/4`;
-  - `/cut/1` até `/cut/4`;
-  - `/program.html` para o overlay dinâmico.
+O botão **PLAY** controla a cena completa:
+
+1. Todos os clipes do GLB começam juntos no tempo zero.
+2. Cada clipe respeita os keyframes e a duração definidos no arquivo.
+3. Não há loop.
+4. Ao terminar, o último frame permanece fixo em tela.
+5. O gráfico do Google Sheets entra no mesmo PLAY.
+6. O início da entrada do gráfico pode ser atrasado de `0` a `15` segundos.
+7. A duração da entrada do gráfico pode ser ajustada de `0,2` a `8` segundos.
+
+O botão **Preparar** retorna o GLB e o gráfico ao tempo zero. A barra de espaço também dispara o PLAY quando nenhum campo de texto está selecionado.
+
+GLB e gráfico podem permanecer visíveis simultaneamente. Projetos da versão 0.4, nos quais o gráfico era ocultado automaticamente ao importar GLB, são migrados para a nova mecânica.
 
 ## Google Sheets
 
-A planilha precisa estar compartilhada como:
+A planilha deve estar compartilhada como **qualquer pessoa com o link pode ver**.
+
+Colunas reconhecidas:
+
+| Coluna | Obrigatória | Uso |
+|---|---|---|
+| `nome` | Sim | Nome do item |
+| `valor` | Sim | Altura da barra |
+| `cor` | Não | Cor hexadecimal |
+| `imagem` | Não | URL HTTPS pública |
+
+Exemplo:
 
 ```text
-Qualquer pessoa com o link → Leitor
+nome,valor,cor,imagem
+Candidato A,42,#3567d7,https://exemplo.com/a.png
+Candidato B,35,#e34f59,https://exemplo.com/b.png
 ```
 
-Não é necessário gerar ou importar um arquivo CSV. Cole o link normal da planilha, por exemplo:
+## URLs após o deploy
 
 ```text
-https://docs.google.com/spreadsheets/d/ID_DA_PLANILHA/edit#gid=0
-```
-
-Estrutura recomendada:
-
-| nome | valor | cor | imagem |
-|---|---:|---|---|
-| Candidato A | 42 | #3567d7 | https://.../foto-a.png |
-| Candidato B | 35 | #e34f59 | https://.../foto-b.png |
-
-O campo `imagem` deve usar uma URL HTTPS acessível publicamente.
-
-Nesta versão, planilhas privadas com OAuth ou conta de serviço não estão implementadas.
-
-## Modelos 3D
-
-### GLB
-
-Formato recomendado. Pode incluir geometria, materiais, texturas, rig, morph targets e animações no mesmo arquivo.
-
-Ao carregar o GLB, o aplicativo cria um relógio global e reproduz todos os clipes encontrados. Clipes com durações diferentes terminam ou reiniciam conforme seus próprios tempos.
-
-### OBJ
-
-Importado como geometria estática. Arquivos MTL e texturas externas não são carregados automaticamente. Para preservar materiais e animações, exporte como GLB.
-
-## Desenvolvimento local
-
-Requer Node.js 20 ou superior.
-
-```bash
-npm install
-npm run dev
-```
-
 Painel:
+https://SEU-WORKER.workers.dev/?room=studio
 
-```text
-http://localhost:8787/?room=studio
-```
-
-Overlay dinâmico:
-
-```text
-http://localhost:8787/program.html?room=studio
-```
+Overlay dinâmico para vMix:
+https://SEU-WORKER.workers.dev/program.html?room=studio
 
 Câmeras virtuais fixas:
+https://SEU-WORKER.workers.dev/camera/1?room=studio
+https://SEU-WORKER.workers.dev/camera/2?room=studio
+https://SEU-WORKER.workers.dev/camera/3?room=studio
+https://SEU-WORKER.workers.dev/camera/4?room=studio
 
-```text
-http://localhost:8787/camera/1?room=studio
-http://localhost:8787/camera/2?room=studio
-http://localhost:8787/camera/3?room=studio
-http://localhost:8787/camera/4?room=studio
+PLAY geral:
+https://SEU-WORKER.workers.dev/play?room=studio&token=SUA_CHAVE
+
+Preparar no tempo zero:
+https://SEU-WORKER.workers.dev/reset?room=studio&token=SUA_CHAVE
 ```
-
-Cortes para Stream Deck:
-
-```text
-http://localhost:8787/cut/1?room=studio
-http://localhost:8787/cut/2?room=studio
-http://localhost:8787/cut/3?room=studio
-http://localhost:8787/cut/4?room=studio
-```
-
-## Deploy no Cloudflare
-
-```bash
-npm install
-npx wrangler login
-npm run deploy
-```
-
-Também é possível conectar o repositório GitHub ao Cloudflare para publicar a cada push.
 
 ## vMix
 
-Adicione o overlay como **Web Browser Input**:
+Adicione `program.html` como **Web Browser Input**, em 1920×1080, e use a entrada como overlay sobre o PGM. O app não recebe vídeo e não utiliza NDI.
 
-```text
-https://SEU-WORKER.workers.dev/program.html?room=studio
+## Desenvolvimento
+
+Requisitos: Node.js 20 ou superior.
+
+```bash
+npm install
+npm run check
+npm run dev
 ```
 
-Use 1920×1080, áudio desativado e mantenha a entrada em um Overlay sobre o PGM.
+Deploy:
 
-## Stream Deck
+```bash
+npm run deploy
+```
 
-Cada botão de câmera pode executar uma Multi Action:
+## Observações
 
-1. Cortar a câmera física no vMix.
-2. Abrir em segundo plano o link `/cut/N?room=studio`.
-
-A aba **Links** gera os endereços usando o domínio, sala e chave atuais.
+- GLB é o formato recomendado para animações e texturas incorporadas.
+- OBJ é estático e pode perder materiais que dependam de MTL e texturas externas.
+- O deploy efetivo deve ser validado na conta Cloudflare e no Browser Input do computador de transmissão.

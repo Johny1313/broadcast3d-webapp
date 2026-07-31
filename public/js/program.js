@@ -1,5 +1,5 @@
-import { BroadcastRenderer } from './renderer3d.js?v=0.4.0';
-import { api, connectSocket, getRoom } from './cloud.js?v=0.4.0';
+import { BroadcastRenderer } from './renderer3d.js?v=0.5.0';
+import { api, connectSocket, getRoom } from './cloud.js?v=0.5.0';
 
 const canvas = document.getElementById('programCanvas');
 const renderer = new BroadcastRenderer(canvas, { interactive: false });
@@ -11,7 +11,8 @@ let sheetBusy = false;
 
 function normalizeState(input) {
   const next = structuredClone(input || {});
-  next.version = 4;
+  const previousVersion = Number(next.version || 0);
+  next.version = 5;
   next.activeCamera = Number(next.activeCamera || 1);
   next.outputVisible = next.outputVisible !== false;
   next.scene ||= {};
@@ -24,13 +25,15 @@ function normalizeState(input) {
   next.scene.model = {
     url: '', name: '', format: '', visible: true,
     position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: 1,
-    animation: { play: true, loop: true, speed: 1, restartToken: 0 },
+    animation: { speed: 1 },
     ...(next.scene.model || {})
   };
   next.scene.model.position = { x: 0, y: 0, z: 0, ...(next.scene.model.position || {}) };
   next.scene.model.rotation = { x: 0, y: 0, z: 0, ...(next.scene.model.rotation || {}) };
-  next.scene.model.animation = { play: true, loop: true, speed: 1, restartToken: 0, ...(next.scene.model.animation || {}) };
-  next.scene.generatedGraphVisible = next.scene.generatedGraphVisible ?? !next.scene.model.url;
+  next.scene.model.animation = { speed: 1, ...(next.scene.model.animation || {}) };
+  next.scene.generatedGraphVisible = next.scene.generatedGraphVisible ?? true;
+  if (previousVersion > 0 && previousVersion < 5 && next.scene.model.url && next.scene.generatedGraphVisible === false) next.scene.generatedGraphVisible = true;
+  next.scene.playback = { startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4, ...(next.scene.playback || {}) };
   next.scene.dataSource = { type: 'google-sheets', url: '', gid: '0', autoRefresh: true, refreshSeconds: 5, ...(next.scene.dataSource || {}) };
   next.cameras = Array.isArray(next.cameras) ? next.cameras : [];
   return next;
