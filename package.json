@@ -1,8 +1,8 @@
 {
   "name": "broadcast3d-cloudflare-webapp",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "private": true,
-  "description": "Webapp Broadcast3D com GLB por GitHub Releases, Google Sheets, escala fixa 0–100, cores ajustáveis e overlay transparente para vMix.",
+  "description": "Webapp Broadcast3D com GLB por GitHub Releases, Google Sheets, gráfico sem base, opacidade, altura inicial e nomes/imagens opcionais.",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",

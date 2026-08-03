@@ -1,5 +1,5 @@
-import { BroadcastRenderer } from './renderer3d.js?v=0.8.3';
-import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programPreviewUrl, programUrl, setConnection, uploadMedia } from './cloud.js?v=0.8.3';
+import { BroadcastRenderer } from './renderer3d.js?v=0.8.4';
+import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programPreviewUrl, programUrl, setConnection, uploadMedia } from './cloud.js?v=0.8.4';
 
 const $ = id => document.getElementById(id);
 const DEG = Math.PI / 180;
@@ -57,6 +57,11 @@ function normalizeState(input) {
   next.scene.model.animation = { speed: 1, ...(next.scene.model.animation || {}) };
   next.scene.generatedGraphVisible = next.scene.generatedGraphVisible ?? true;
   if (previousVersion > 0 && previousVersion < 6 && next.scene.model.url && next.scene.generatedGraphVisible === false) next.scene.generatedGraphVisible = true;
+  next.scene.graph = { opacity: 1, startHeight: 0, showNames: false, showImages: false, ...(next.scene.graph || {}) };
+  next.scene.graph.opacity = Math.max(0, Math.min(1, Number(next.scene.graph.opacity ?? 1)));
+  next.scene.graph.startHeight = Number(next.scene.graph.startHeight || 0);
+  next.scene.graph.showNames = next.scene.graph.showNames === true;
+  next.scene.graph.showImages = next.scene.graph.showImages === true;
   next.scene.playback = { mode: 'preview', startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4, ...(next.scene.playback || {}) };
   next.scene.dataSource = { type: 'google-sheets', enabled: true, url: DEFAULT_SHEET_URL, gid: '0', range: '', mappingMode: 'auto', firstRowHeader: true, columns: { name: 'A', value: 'B', color: 'C', image: 'D', scale: 'B' }, autoRefresh: true, refreshSeconds: 5, lastUpdated: '', lastRowCount: 0, lastError: '', lastSourceUrl: '', lastRange: '', lastMapping: null, ...(next.scene.dataSource || {}) };
   next.scene.dataSource.columns = { name: 'A', value: 'B', color: 'C', image: 'D', scale: 'B', ...(next.scene.dataSource.columns || {}) };
@@ -249,15 +254,16 @@ function renderSceneControls() {
   $('anchorScale').value = state.scene.anchor.scale;
   $('anchorLocked').checked = state.scene.anchor.locked;
   $('lockBadge').textContent = state.scene.anchor.locked ? 'TRAVADO' : 'EDIÇÃO';
-  $('baseThickness').value = state.scene.base.thickness;
-  $('baseScale').value = state.scene.base.scale;
-  $('alphaThreshold').value = state.scene.base.alphaThreshold;
-  $('baseColor').value = state.scene.base.color;
-  if ($('baseImageUrlInput')) $('baseImageUrlInput').value = state.scene.base.sourceUrl || '';
+  $('graphOpacity').value = state.scene.graph.opacity;
+  $('graphStartHeight').value = state.scene.graph.startHeight;
+  $('graphShowNames').checked = state.scene.graph.showNames === true;
+  $('graphShowImages').checked = state.scene.graph.showImages === true;
   $('barWidth').value = state.scene.bars.width;
   $('barDepth').value = state.scene.bars.depth;
   $('barHeight').value = state.scene.bars.maxHeight;
   $('barGap').value = state.scene.bars.gap;
+  $('imageScale').value = state.scene.bars.imageScale;
+  $('labelScale').value = state.scene.bars.labelScale;
   $('ambientLight').value = state.scene.lighting.ambient;
   $('keyLight').value = state.scene.lighting.key;
   $('shadowOpacity').value = state.scene.lighting.shadowOpacity;
@@ -276,13 +282,14 @@ function renderSceneControls() {
 function renderReadouts() {
   const pairs = [
     ['guideOpacityOutput', Number(state.scene.guideOpacity).toFixed(2)],
-    ['baseThicknessOutput', `${Number(state.scene.base.thickness).toFixed(2)} m`],
-    ['baseScaleOutput', `${Number(state.scene.base.scale).toFixed(1)} m`],
-    ['alphaThresholdOutput', `${Math.round(Number(state.scene.base.alphaThreshold) * 100)}%`],
+    ['graphOpacityOutput', `${Math.round(Number(state.scene.graph.opacity) * 100)}%`],
+    ['graphStartHeightOutput', `${Number(state.scene.graph.startHeight).toFixed(2)} m`],
     ['barWidthOutput', Number(state.scene.bars.width).toFixed(2)],
     ['barDepthOutput', Number(state.scene.bars.depth).toFixed(2)],
     ['barHeightOutput', Number(state.scene.bars.maxHeight).toFixed(1)],
     ['barGapOutput', Number(state.scene.bars.gap).toFixed(2)],
+    ['imageScaleOutput', Number(state.scene.bars.imageScale).toFixed(2)],
+    ['labelScaleOutput', Number(state.scene.bars.labelScale).toFixed(2)],
     ['ambientLightOutput', Number(state.scene.lighting.ambient).toFixed(2)],
     ['keyLightOutput', Number(state.scene.lighting.key).toFixed(2)],
     ['shadowOpacityOutput', Number(state.scene.lighting.shadowOpacity).toFixed(2)],
@@ -324,7 +331,7 @@ function renderBarItems() {
     row.className = 'bar-item color-only';
     row.innerHTML = `
       <span class="bar-color-swatch" style="--bar-color:${escapeHtml(item.color || '#3b82f6')}"></span>
-      <div><strong>${escapeHtml(item.name)}</strong><small>Índice ${Number(item.scale ?? item.value).toLocaleString('pt-BR')} · escala fixa 0–100</small></div>
+      <div><strong>${escapeHtml(item.name)}</strong><small>Índice ${Number(item.scale ?? item.value).toLocaleString('pt-BR')} · ${item.imageUrl ? 'imagem disponível' : 'sem imagem'}</small></div>
       <label class="bar-color-picker">Cor<input type="color" value="${escapeHtml(item.color || '#3b82f6')}"></label>
       <button class="bar-color-reset" type="button" ${item.colorLocked ? '' : 'disabled'}>Planilha</button>`;
     const colorInput = row.querySelector('input[type="color"]');
@@ -648,8 +655,10 @@ function bindSceneInputs() {
   const inputs = [
     ['projectName', 'projectName', 'string'],
     ['anchorX', 'scene.anchor.x', 'number'], ['anchorZ', 'scene.anchor.z', 'number'], ['anchorRotation', 'scene.anchor.rotationY', 'number'], ['anchorScale', 'scene.anchor.scale', 'number'], ['anchorLocked', 'scene.anchor.locked', 'checked'],
-    ['baseThickness', 'scene.base.thickness', 'number'], ['baseScale', 'scene.base.scale', 'number'], ['alphaThreshold', 'scene.base.alphaThreshold', 'number'], ['baseColor', 'scene.base.color', 'string'],
+    ['graphOpacity', 'scene.graph.opacity', 'number'], ['graphStartHeight', 'scene.graph.startHeight', 'number'],
+    ['graphShowNames', 'scene.graph.showNames', 'checked'], ['graphShowImages', 'scene.graph.showImages', 'checked'],
     ['barWidth', 'scene.bars.width', 'number'], ['barDepth', 'scene.bars.depth', 'number'], ['barHeight', 'scene.bars.maxHeight', 'number'], ['barGap', 'scene.bars.gap', 'number'],
+    ['imageScale', 'scene.bars.imageScale', 'number'], ['labelScale', 'scene.bars.labelScale', 'number'],
     ['guideOpacity', 'scene.guideOpacity', 'number'],
     ['ambientLight', 'scene.lighting.ambient', 'number'], ['keyLight', 'scene.lighting.key', 'number'], ['shadowOpacity', 'scene.lighting.shadowOpacity', 'number'],
     ['modelVisible', 'scene.model.visible', 'checked'],
@@ -719,17 +728,6 @@ function fileNameFromUrl(value) {
 }
 
 function bindUploads() {
-  $('loadBaseUrlButton').addEventListener('click', () => {
-    try {
-      const sourceUrl = String($('baseImageUrlInput').value || '').trim();
-      const name = fileNameFromUrl(sourceUrl).toLowerCase();
-      if (!name.endsWith('.png')) throw new Error('A base precisa ser um arquivo PNG transparente.');
-      state.scene.base.sourceUrl = sourceUrl;
-      state.scene.base.imageUrl = proxiedExternalUrl(sourceUrl);
-      renderer.setState(state);
-      queueSave('Base PNG carregada por URL');
-    } catch (error) { showToast(error.message); }
-  });
 
   $('guideInput').addEventListener('change', () => {
     const file = $('guideInput').files[0];

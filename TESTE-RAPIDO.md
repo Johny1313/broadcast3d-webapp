@@ -1,46 +1,37 @@
-# Teste rápido da v0.8.3
+# Teste rápido da v0.8.4
 
 1. Abra `/api/health`.
-2. Confirme `version: 0.8.3` e `mediaBucket: true`.
+2. Confirme `version: 0.8.4` e `mediaStorage: github-release-url`.
 3. Abra o painel com `?room=studio`.
-4. Importe `SP05.glb`.
-5. Acompanhe o progresso de upload até 100%.
-6. Aguarde a mensagem com a quantidade de objetos e animações.
-7. Abra `/overlay?room=studio&preview=1&debug=1`.
-8. O diagnóstico deve informar `GLB OK`.
-9. Clique em **Preparar**.
-10. Clique em **PLAY**.
-11. Confirme que todas as animações terminam e permanecem no último frame.
-12. No vMix, use `/overlay?room=studio`.
+4. Cole a URL do GLB publicado em um GitHub Release.
+5. Aguarde a mensagem com a quantidade de objetos e animações.
+6. Abra `/overlay?room=studio&debug=1`.
+7. O diagnóstico deve informar `GLB OK`.
+8. Clique em **Preparar**.
+9. Clique em **PLAY**.
+10. Confirme que as animações terminam e permanecem no último frame.
+11. No vMix, use `/overlay?room=studio`, sem `preview=1`.
+
+## Teste do gráfico integrado ao GLB
+
+1. Carregue um GLB com piso, mapa ou plataforma.
+2. Ative o gráfico e ajuste **Altura inicial das barras** até encostar no objeto do GLB.
+3. Ajuste a opacidade para 50% e confirme que as barras continuam animando.
+4. Ative e desative **Exibir nomes**.
+5. Ative **Usar imagens da planilha** e confirme que somente itens com URL válida recebem imagem.
+6. Ajuste separadamente a escala dos nomes e das imagens.
+7. Clique em **Preparar** e depois em **PLAY**.
 
 ## Erros comuns
 
-### `MEDIA_BUCKET não configurado`
+### O GLB não abre
 
-Crie o bucket:
-
-```bash
-npx wrangler r2 bucket create broadcast3d-media
-```
-
-Depois publique novamente.
-
-### Upload chega a 100%, mas o GLB não aparece
-
-Abra o link de diagnóstico com `preview=1&debug=1`. Ele exibirá o erro HTTP ou de parsing do modelo.
+Confirme que o arquivo foi anexado a um GitHub Release e que a URL termina em `.glb` ou `.obj`.
 
 ### `/api/health` retorna 404
 
 O projeto foi publicado como Pages/site estático. Publique como Cloudflare Worker.
 
+### O PLAY funciona no painel, mas não no overlay
 
-## Teste específico do PLAY
-
-1. Abra o LIVE `/overlay?room=studio` em uma janela.
-2. Em outra janela, abra o painel da mesma sala.
-3. Importe/carregue o GLB e aguarde a mensagem de modelo pronto.
-4. Clique em **Preparar**.
-5. Clique em **PLAY**.
-6. Confirme que a animação começa do frame zero no LIVE.
-7. Recarregue o LIVE enquanto o estado estiver em PLAY e confirme que ele aguarda o modelo carregar antes de iniciar do zero.
-8. Confirme que `/overlay?room=studio&preview=1&debug=1` mostra a cena final e não é o link usado no vMix.
+Confirme que ambos usam a mesma sala e que o link do vMix não contém `preview=1`.

@@ -1,47 +1,24 @@
-# Deploy correto — GitHub + Cloudflare Worker + R2
+# Deploy correto — GitHub + Cloudflare Worker
 
-## 1. Criar o bucket R2 uma única vez
+## Arquitetura
 
-Pelo terminal:
+- Static Assets para painel e overlay;
+- Durable Object com SQLite para estado das salas;
+- WebSocket para sincronização entre operador e vMix;
+- GitHub Releases para GLB, OBJ e mídia externa;
+- proxy do Worker para Google Sheets e assets do GitHub.
 
-```bash
-npm install
-npx wrangler login
-npx wrangler r2 bucket create broadcast3d-media
-```
+Não é necessário ativar R2.
 
-Também é possível criar no Dashboard:
-
-```text
-R2 Object Storage → Create bucket → broadcast3d-media
-```
-
-## 2. Publicar o Worker
-
-```bash
-npm run check
-npm run deploy
-```
-
-O Worker utiliza:
-
-- Static Assets;
-- Durable Object para estado e WebSocket;
-- R2 para GLB, OBJ, PNG e imagens;
-- proxy para Google Sheets.
-
-Não publique apenas a pasta `public` como Pages.
-
-## 3. Deploy automático pelo GitHub
+## Deploy automático
 
 Conecte o repositório em **Workers & Pages → Workers Builds**.
 
 ```text
 Build command: npm run check
 Deploy command: npm run deploy
+Root directory: /
 ```
-
-O bucket R2 precisa existir antes do primeiro deploy automático.
 
 Secret opcional:
 
@@ -49,7 +26,7 @@ Secret opcional:
 CONTROL_TOKEN
 ```
 
-## 4. Testes
+## Testes
 
 Abra:
 
@@ -62,13 +39,25 @@ Resposta esperada:
 ```json
 {
   "ok": true,
-  "version": "0.8.3",
-  "mediaBucket": true
+  "version": "0.8.4",
+  "mediaStorage": "github-release-url"
 }
 ```
 
-Depois teste:
+Painel:
 
 ```text
-https://SEU-WORKER.workers.dev/overlay?room=studio&preview=1&debug=1
+https://SEU-WORKER.workers.dev/?room=studio
+```
+
+Overlay LIVE:
+
+```text
+https://SEU-WORKER.workers.dev/overlay?room=studio
+```
+
+Diagnóstico:
+
+```text
+https://SEU-WORKER.workers.dev/overlay?room=studio&debug=1
 ```

@@ -1,8 +1,8 @@
-# Broadcast3D Cloud v0.8.3
+# Broadcast3D Cloud v0.8.4
 
 ## Gráfico limpo 0–100
 
-A versão 0.8.3 usa o campo `indice` como escala absoluta entre 0 e 100. A altura configurada no painel representa exatamente a linha 100. O gráfico nativo exibe somente as barras; imagens, valores e boxes foram removidos. Cada barra possui seletor de cor persistente.
+A versão 0.8.4 mantém o campo `indice` como escala absoluta entre 0 e 100 e remove a base própria do gráfico. As barras passam a compartilhar o mesmo chão do GLB, com controle de altura inicial, opacidade geral e opções independentes para exibir nomes e usar as imagens recebidas do Google Sheets.
 
 ## Mídia sem R2
 
@@ -47,61 +47,18 @@ A opção **A primeira linha do intervalo é cabeçalho** define se a primeira l
 
 Webapp de overlay 3D transparente para vMix, com modelos GLB/OBJ, gráfico criado por Google Sheets, quatro câmeras virtuais, PLAY único e operação por Stream Deck.
 
-## Correção principal: GLB SP05
+## Modelos GLB e OBJ sem R2
 
-O `SP05.glb` tem cerca de 32 MB, 16 malhas, aproximadamente 607 mil vértices, 18 animações e dois PNGs RGBA incorporados.
-
-A versão anterior enviava o arquivo convertido em Base64 dentro de JSON e tentava guardar blocos grandes no Durable Object. Essa mecânica não era adequada para um GLB desse tamanho.
-
-A v0.8.0 muda o fluxo:
+Os modelos são publicados como assets em um GitHub Release e carregados pelo painel por URL HTTPS.
 
 ```text
-Navegador
-  └── upload binário direto
-        └── Cloudflare Worker
-              └── Cloudflare R2
-                    └── overlay e painel carregam o mesmo GLB
+GitHub Release
+  └── modelo.glb
+        └── /api/external-media
+              └── painel e overlay carregam o mesmo arquivo
 ```
 
-Implementado:
-
-- upload binário sem Base64;
-- armazenamento dos modelos e imagens no Cloudflare R2;
-- progresso real de upload;
-- carregamento progressivo do GLB;
-- cálculo de centralização usando o último frame da animação;
-- suporte a cenas que começam com objetos em escala zero;
-- preservação dos materiais e PNGs transparentes do GLB;
-- todas as animações começam no PLAY;
-- cada animação para no próprio último frame;
-- os objetos permanecem visíveis após o término;
-- mensagens claras de erro no painel e no overlay de diagnóstico.
-
-## Pré-requisito obrigatório: bucket R2
-
-Crie uma vez o bucket:
-
-```bash
-npx wrangler login
-npx wrangler r2 bucket create broadcast3d-media
-```
-
-Ou use:
-
-```text
-criar-bucket-r2.bat
-```
-
-O arquivo `wrangler.jsonc` já contém o binding:
-
-```json
-{
-  "binding": "MEDIA_BUCKET",
-  "bucket_name": "broadcast3d-media"
-}
-```
-
-Sem o bucket, o painel abrirá, mas o upload de GLB retornará uma mensagem informando que `MEDIA_BUCKET` não está configurado.
+No painel, use **Modelo 3D principal → URL do GLB/OBJ no GitHub**. O Worker atua como proxy com suporte a `Range`, permitindo que o mesmo overlay funcione em computadores e redes diferentes.
 
 ## Fluxo operacional
 
@@ -173,10 +130,21 @@ npm run deploy
 O projeto deve ser publicado como **Cloudflare Worker**, não como site estático no Pages.
 
 
-## v0.8.3 — Sheets/CSV habilitável e índice das barras
+## v0.8.4 — Sheets/CSV habilitável e índice das barras
 
 - Chave para habilitar ou desabilitar os dados do Google Sheets/CSV sem apagar a última leitura.
 - Ao desabilitar, o gráfico gerado fica oculto e a atualização automática é interrompida.
 - A coluna `indice`/`índice` controla a escala e a altura relativa das barras.
 - A coluna `valor` permanece como texto exibido; se não existir, o índice também é usado como valor.
 - Planilha padrão deste projeto: `https://docs.google.com/spreadsheets/d/1XiDEtcuOuW1jfj8jX1JHxFgsbtbABAgTZuhZIYsWI6w/edit?usp=sharing`.
+
+## v0.8.4 — integração do gráfico com o chão do GLB
+
+- Base PNG extrudada removida do gráfico.
+- Controle de opacidade de 0% a 100%.
+- Controle de altura inicial das barras para apoiar o gráfico sobre objetos do GLB.
+- O modelo GLB não recebe mais deslocamento automático causado pela antiga base.
+- Nomes opcionais, renderizados sem valores e sem boxes.
+- Imagens opcionais, usando somente URLs válidas recebidas da planilha.
+- Controles independentes de escala para nomes e imagens.
+- PLAY preservado: barras, nomes e imagens entram uma vez e ficam no último frame.

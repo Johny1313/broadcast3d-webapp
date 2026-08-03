@@ -59,6 +59,12 @@ function defaultState() {
         animation: { speed: 1 }
       },
       generatedGraphVisible: true,
+      graph: {
+        opacity: 1,
+        startHeight: 0,
+        showNames: false,
+        showImages: false
+      },
       playback: { mode: 'preview', startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4 },
       dataSource: {
         type: 'google-sheets',
@@ -111,6 +117,11 @@ function normalizeState(input) {
   state.scene.model.animation = { ...defaults.scene.model.animation, ...(state.scene.model.animation || {}) };
   state.scene.generatedGraphVisible = state.scene.generatedGraphVisible ?? true;
   if (previousVersion > 0 && previousVersion < 6 && state.scene.model.url && state.scene.generatedGraphVisible === false) state.scene.generatedGraphVisible = true;
+  state.scene.graph = { ...defaults.scene.graph, ...(state.scene.graph || {}) };
+  state.scene.graph.opacity = Math.max(0, Math.min(1, Number(state.scene.graph.opacity ?? 1)));
+  state.scene.graph.startHeight = Number(state.scene.graph.startHeight || 0);
+  state.scene.graph.showNames = state.scene.graph.showNames === true;
+  state.scene.graph.showImages = state.scene.graph.showImages === true;
   state.scene.playback = { ...defaults.scene.playback, ...(state.scene.playback || {}) };
   state.scene.dataSource = { ...defaults.scene.dataSource, ...(state.scene.dataSource || {}) };
   state.scene.dataSource.columns = { ...defaults.scene.dataSource.columns, ...(state.scene.dataSource.columns || {}) };
@@ -523,7 +534,7 @@ export default {
       }
       const headers = new Headers({
         accept: request.headers.get('accept') || '*/*',
-        'user-agent': 'Broadcast3D/0.8.3'
+        'user-agent': 'Broadcast3D/0.8.4'
       });
       const range = request.headers.get('range');
       if (range) headers.set('range', range);
@@ -546,10 +557,10 @@ export default {
       return json({
         ok: true,
         service: 'broadcast3d-cloudflare',
-        version: '0.8.3',
+        version: '0.8.4',
         realtime: 'durable-object-websocket',
-        storage: 'durable-object-sqlite + external-github-media',
-        mediaBucket: Boolean(env.MEDIA_BUCKET),
+        storage: 'durable-object-sqlite + github-release-proxy',
+        mediaStorage: 'github-release-url',
         authRequired: Boolean(String(env.CONTROL_TOKEN || '').trim())
       });
     }
@@ -659,7 +670,7 @@ export default {
       try {
         const stateResponse = await routeToRoom(new Request(`${url.origin}/api/state?room=${encodeURIComponent(room)}`), env, room);
         const statePayload = await stateResponse.json();
-        return json({ ok: true, version: '0.8.3', room, hasState: Boolean(statePayload?.state), activeCamera: statePayload?.state?.activeCamera || 1, itemCount: statePayload?.state?.scene?.items?.length || 0 });
+        return json({ ok: true, version: '0.8.4', room, hasState: Boolean(statePayload?.state), activeCamera: statePayload?.state?.activeCamera || 1, itemCount: statePayload?.state?.scene?.items?.length || 0 });
       } catch (error) {
         return json({ ok: false, error: error.message || 'Falha ao validar overlay.' }, 500);
       }

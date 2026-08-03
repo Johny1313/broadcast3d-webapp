@@ -1,5 +1,5 @@
-import { BroadcastRenderer } from './renderer3d.js?v=0.8.3';
-import { api, connectSocket, getRoom } from './cloud.js?v=0.8.3';
+import { BroadcastRenderer } from './renderer3d.js?v=0.8.4';
+import { api, connectSocket, getRoom } from './cloud.js?v=0.8.4';
 
 const canvas = document.getElementById('programCanvas');
 const renderer = new BroadcastRenderer(canvas, { interactive: false });
@@ -36,6 +36,11 @@ function normalizeState(input) {
   next.scene.model.animation = { speed: 1, ...(next.scene.model.animation || {}) };
   next.scene.generatedGraphVisible = next.scene.generatedGraphVisible ?? true;
   if (previousVersion > 0 && previousVersion < 6 && next.scene.model.url && next.scene.generatedGraphVisible === false) next.scene.generatedGraphVisible = true;
+  next.scene.graph = { opacity: 1, startHeight: 0, showNames: false, showImages: false, ...(next.scene.graph || {}) };
+  next.scene.graph.opacity = Math.max(0, Math.min(1, Number(next.scene.graph.opacity ?? 1)));
+  next.scene.graph.startHeight = Number(next.scene.graph.startHeight || 0);
+  next.scene.graph.showNames = next.scene.graph.showNames === true;
+  next.scene.graph.showImages = next.scene.graph.showImages === true;
   next.scene.playback = { mode: 'preview', startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4, ...(next.scene.playback || {}) };
   next.scene.dataSource = { type: 'google-sheets', url: '', gid: '0', range: '', mappingMode: 'auto', firstRowHeader: true, columns: { name: 'A', value: 'B', color: 'C', image: 'D' }, autoRefresh: true, refreshSeconds: 5, lastUpdated: '', lastRowCount: 0, lastError: '', lastSourceUrl: '', lastRange: '', lastMapping: null, ...(next.scene.dataSource || {}) };
   next.scene.dataSource.columns = { name: 'A', value: 'B', color: 'C', image: 'D', ...(next.scene.dataSource.columns || {}) };

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Broadcast3D Cloud v0.8.3</title>
-  <link rel="stylesheet" href="/styles.css?v=0.8.3">
+  <title>Broadcast3D Cloud v0.8.4</title>
+  <link rel="stylesheet" href="/styles.css?v=0.8.4">
   <script type="importmap">
   {
     "imports": {
@@ -19,7 +19,7 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark">3D</div>
-        <div><strong>Broadcast3D Cloud <small class="version-badge">v0.8.3</small></strong><span>PLAY único para GLB + gráfico do Google Sheets · overlay transparente para vMix</span></div>
+        <div><strong>Broadcast3D Cloud <small class="version-badge">v0.8.4</small></strong><span>PLAY único para GLB + gráfico do Google Sheets · overlay transparente para vMix</span></div>
       </div>
       <div class="top-actions cloud-top-actions">
         <span id="connectionBadge" class="status-badge">Conectando</span>
@@ -254,28 +254,31 @@
 
         <section class="tab-panel" data-panel="graph">
           <div class="section-title"><span>Gráfico nativo opcional</span><span id="graphVisibilityPill" class="pill">VISÍVEL</span></div>
-          <label class="switch-row prominent-switch"><input id="generatedGraphVisible" type="checkbox"><span>Exibir base PNG e barras</span></label>
-          <p class="helper">O gráfico pode ser exibido junto com o GLB. O mesmo PLAY inicia ambos e mantém o resultado final em tela.</p>
+          <label class="switch-row prominent-switch"><input id="generatedGraphVisible" type="checkbox"><span>Exibir gráfico de barras</span></label>
+          <p class="helper">O gráfico não cria mais uma base própria. Barras e GLB compartilham o mesmo chão e podem ser alinhados pela altura inicial.</p>
+          <div class="divider"></div>
+          <div class="section-title"><span>Integração com o GLB</span><span class="pill">CHÃO 3D</span></div>
+          <label class="range-field">Opacidade do gráfico <output id="graphOpacityOutput"></output><input id="graphOpacity" type="range" min="0" max="1" step="0.01"></label>
+          <label class="range-field">Altura inicial das barras <output id="graphStartHeightOutput"></output><input id="graphStartHeight" type="range" min="-5" max="12" step="0.01"></label>
+          <p class="helper">Use a altura inicial para apoiar as barras exatamente sobre o piso, mapa ou plataforma já existente dentro do GLB.</p>
+          <div class="form-grid two graph-display-options">
+            <label class="switch-row"><input id="graphShowNames" type="checkbox"><span>Exibir nomes</span></label>
+            <label class="switch-row"><input id="graphShowImages" type="checkbox"><span>Usar imagens da planilha</span></label>
+          </div>
+          <label class="range-field">Escala dos nomes <output id="labelScaleOutput"></output><input id="labelScale" type="range" min="0.4" max="2.5" step="0.02"></label>
+          <label class="range-field">Escala das imagens <output id="imageScaleOutput"></output><input id="imageScale" type="range" min="0.3" max="3" step="0.02"></label>
           <div class="divider"></div>
           <div class="section-title"><span>Animação do gráfico</span><span class="pill">TIMELINE</span></div>
           <label class="range-field">Começar após <output id="graphAnimationStartOutput"></output><input id="graphAnimationStart" type="range" min="0" max="15" step="0.1"></label>
           <label class="range-field">Duração da entrada <output id="graphAnimationDurationOutput"></output><input id="graphAnimationDuration" type="range" min="0.2" max="8" step="0.1"></label>
-          <p class="helper">O tempo é contado a partir do PLAY. A base aparece primeiro e depois as barras crescem. No final, tudo permanece visível.</p>
-          <div class="divider"></div>
-          <div class="section-title"><span>Base PNG extrudada</span></div>
-          <label class="field">URL do PNG transparente no GitHub<input id="baseImageUrlInput" type="url" autocomplete="off" spellcheck="false" placeholder="https://github.com/.../releases/download/media-v1/base.png"></label>
-          <button id="loadBaseUrlButton" class="button secondary full" type="button">CARREGAR BASE DA URL</button>
-          <label class="range-field">Extrusão <output id="baseThicknessOutput"></output><input id="baseThickness" type="range" min="0.05" max="1.5" step="0.01"></label>
-          <label class="range-field">Tamanho <output id="baseScaleOutput"></output><input id="baseScale" type="range" min="3" max="18" step="0.1"></label>
-          <label class="range-field">Leitura do recorte <output id="alphaThresholdOutput"></output><input id="alphaThreshold" type="range" min="0.02" max="0.8" step="0.01"></label>
-          <label class="field color-field">Cor lateral<input id="baseColor" type="color"></label>
+          <p class="helper">As barras crescem a partir da altura inicial. Nomes e imagens entram no final do crescimento e permanecem visíveis.</p>
           <div class="divider"></div>
           <div class="section-title"><span>Barras</span></div>
           <label class="range-field">Largura <output id="barWidthOutput"></output><input id="barWidth" type="range" min="0.2" max="2.2" step="0.02"></label>
           <label class="range-field">Profundidade <output id="barDepthOutput"></output><input id="barDepth" type="range" min="0.2" max="2" step="0.02"></label>
           <label class="range-field">Altura da escala 0–100 <output id="barHeightOutput"></output><input id="barHeight" type="range" min="1" max="20" step="0.01"></label>
           <label class="range-field">Espaçamento <output id="barGapOutput"></output><input id="barGap" type="range" min="0" max="2" step="0.02"></label>
-          <p class="helper">A escala é fixa: índice 0 fica na base e índice 100 alcança a altura configurada acima. Ajuste esse controle para coincidir exatamente com a linha 100 do GLB.</p>
+          <p class="helper">A escala é fixa: índice 0 começa na altura definida acima e índice 100 alcança a altura máxima configurada.</p>
           <div class="divider"></div>
           <div class="section-title"><span>Cores das barras</span><span class="pill">AJUSTÁVEL</span></div>
           <div id="barItems" class="bar-items"></div>
@@ -321,6 +324,6 @@
     </div>
   </dialog>
 
-  <script type="module" src="/js/operator.js?v=0.8.3"></script>
+  <script type="module" src="/js/operator.js?v=0.8.4"></script>
 </body>
 </html>

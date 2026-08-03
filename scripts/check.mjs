@@ -18,7 +18,7 @@ for (const file of ['src/index.js','public/js/operator.js','public/js/program.js
 const worker = await readFile(new URL('../src/index.js', import.meta.url), 'utf8');
 for (const required of [
   'BroadcastRoom', '/api/state', '/api/ws', '/api/upload', '/api/sheets', '/api/sheets/sync',
-  '/api/overlay-check', '/api/external-media', "version: '0.8.3'", 'state.version = 8', "playback.mode = 'playing'",
+  '/api/overlay-check', '/api/external-media', "version: '0.8.4'", 'state.version = 8', "playback.mode = 'playing'",
   "playback.mode = 'prepared'", 'googleSheetCandidates', 'detectDelimiter', 'parseA1Range', 'normalizeSheetReadConfig', 'range:', 'mappingMode'
 ]) if (!worker.includes(required)) throw new Error(`Implementação ausente no Worker: ${required}`);
 
@@ -44,12 +44,12 @@ assert(parseA1Range('B:D').startColumn === 1 && parseA1Range('B:D').endColumn ==
 assert(parseA1Range('3:12').startRow === 2 && parseA1Range('3:12').endRow === 12, 'intervalo somente de linhas');
 
 const renderer = await readFile(new URL('../public/js/renderer3d.js', import.meta.url), 'utf8');
-for (const required of ['GLTFLoader','LoopOnce','clampWhenFinished = true','applyGraphAnimation','Number.POSITIVE_INFINITY','action.paused = finished','model-loading','model-ready','setFromObject(root, true)', 'tryStartPendingPlayback', 'localPlaybackStartedAt', "mode === 'final-preview'", 'playback-waiting', 'playback-started', 'fixedScaleMaximum = 100', 'Visual limpo: somente a barra 3D']) {
+for (const required of ['GLTFLoader','LoopOnce','clampWhenFinished = true','applyGraphAnimation','Number.POSITIVE_INFINITY','action.paused = finished','model-loading','model-ready','setFromObject(root, true)', 'tryStartPendingPlayback', 'localPlaybackStartedAt', "mode === 'final-preview'", 'playback-waiting', 'playback-started', 'fixedScaleMaximum = 100', 'graph.showImages === true', 'graph.showNames === true', 'graphOpacity', 'startHeight']) {
   if (!renderer.includes(required)) throw new Error(`Renderer incompleto: ${required}`);
 }
 
 const operator = await readFile(new URL('../public/js/operator.js', import.meta.url), 'utf8');
-for (const required of ["api('/api/sheets/sync'", 'programPreviewUrl', '/api/overlay-check', 'Backend não encontrado', 'sheetRange', 'sheetMappingMode', 'sheetNameColumn', 'sheetDataEnabled', 'sheetScaleColumn', 'modelUrlInput', 'loadModelUrlButton', 'bar-color-picker']) {
+for (const required of ["api('/api/sheets/sync'", 'programPreviewUrl', '/api/overlay-check', 'Backend não encontrado', 'sheetRange', 'sheetMappingMode', 'sheetNameColumn', 'sheetDataEnabled', 'sheetScaleColumn', 'modelUrlInput', 'loadModelUrlButton', 'bar-color-picker', 'graphOpacity', 'graphStartHeight', 'graphShowNames', 'graphShowImages']) {
   if (!operator.includes(required)) throw new Error(`Operador incompleto: ${required}`);
 }
 
@@ -62,4 +62,4 @@ for (const route of ['/api/*','/camera/*','/cut/*','/play','/reset','/overlay'])
 }
 if (wrangler.includes('r2_buckets') || wrangler.includes('MEDIA_BUCKET')) throw new Error('O deploy sem R2 não deve declarar MEDIA_BUCKET.');
 
-console.log('Broadcast3D v0.8.3 validado: escala fixa 0–100, cores ajustáveis, gráfico sem imagens/valores/boxes, PLAY sincronizado e deploy sem R2.');
+console.log('Broadcast3D v0.8.4 validado: gráfico sem base, opacidade e altura inicial ajustáveis, nomes/imagens opcionais, escala fixa 0–100, PLAY sincronizado e deploy sem R2.');

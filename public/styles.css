@@ -104,9 +104,13 @@
 @media(max-width:620px){.form-grid.five{grid-template-columns:repeat(2,1fr)}}
 
 
-/* v0.8.3 — gráfico limpo e editor de cores */
+/* v0.8.4 — gráfico sem base, opacidade, altura inicial, nomes e imagens opcionais */
 .bar-item.color-only{grid-template-columns:18px minmax(0,1fr) 62px 58px}
 .bar-color-swatch{display:block;width:16px;height:44px;border-radius:5px;background:var(--bar-color);border:1px solid rgba(255,255,255,.45);box-shadow:inset 0 0 0 1px rgba(0,0,0,.18)}
 .bar-color-picker{display:flex;flex-direction:column;gap:4px;color:var(--muted);font-size:10px;text-align:center}
 .bar-color-picker input{width:58px;height:30px;padding:2px;border:1px solid var(--line);border-radius:6px;background:#0b1422;cursor:pointer}
 .bar-color-reset:disabled{opacity:.35;cursor:not-allowed}
+
+/* v0.8.4 */
+.graph-display-options{align-items:stretch}
+.graph-display-options .switch-row{min-height:44px}

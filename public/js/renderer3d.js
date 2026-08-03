@@ -27,32 +27,23 @@ function loadImage(url) {
   });
 }
 
-function createLabelCanvas(item) {
+function createNameCanvas(item) {
   const canvas = document.createElement('canvas');
-  canvas.width = 768;
-  canvas.height = 250;
+  canvas.width = 1024;
+  canvas.height = 220;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(5, 12, 24, 0.9)';
-  if (typeof ctx.roundRect === 'function') {
-    ctx.beginPath();
-    ctx.roundRect(18, 16, 732, 218, 30);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,.28)';
-    ctx.lineWidth = 4;
-    ctx.stroke();
-  } else {
-    ctx.fillRect(18, 16, 732, 218);
-  }
+  const name = String(item.name || '').trim().toUpperCase();
+  const label = name.length > 30 ? `${name.slice(0, 29)}…` : name;
+  ctx.font = '800 92px Arial, sans-serif';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(0,0,0,.88)';
+  ctx.lineWidth = 18;
+  ctx.strokeText(label, canvas.width / 2, canvas.height / 2);
   ctx.fillStyle = '#ffffff';
-  ctx.font = '700 84px Arial, sans-serif';
-  ctx.fillText(String(item.value), 384, 86);
-  ctx.fillStyle = '#dbe7fa';
-  ctx.font = '700 44px Arial, sans-serif';
-  const name = String(item.name || '').toUpperCase();
-  ctx.fillText(name.length > 24 ? `${name.slice(0, 23)}…` : name, 384, 177);
+  ctx.fillText(label, canvas.width / 2, canvas.height / 2);
   return canvas;
 }
 
@@ -203,6 +194,11 @@ function normalizedState(input) {
   state.scene.model.animation = { speed: 1, ...(state.scene.model.animation || {}) };
   state.scene.generatedGraphVisible = state.scene.generatedGraphVisible ?? true;
   if (previousVersion > 0 && previousVersion < 6 && state.scene.model.url && state.scene.generatedGraphVisible === false) state.scene.generatedGraphVisible = true;
+  state.scene.graph = { opacity: 1, startHeight: 0, showNames: false, showImages: false, ...(state.scene.graph || {}) };
+  state.scene.graph.opacity = clamp(Number(state.scene.graph.opacity ?? 1), 0, 1);
+  state.scene.graph.startHeight = Number(state.scene.graph.startHeight || 0);
+  state.scene.graph.showNames = state.scene.graph.showNames === true;
+  state.scene.graph.showImages = state.scene.graph.showImages === true;
   state.scene.playback = { startedAt: 0, playToken: 0, resetToken: 0, graphStart: 1, graphDuration: 1.4, ...(state.scene.playback || {}) };
   state.scene.dataSource = { type: 'google-sheets', enabled: true, url: '', gid: '0', autoRefresh: true, refreshSeconds: 5, lastUpdated: '', lastRowCount: 0, ...(state.scene.dataSource || {}) };
   state.scene.dataSource.enabled = state.scene.dataSource.enabled !== false;
@@ -354,8 +350,8 @@ export class BroadcastRenderer {
     const next = normalizedState(input);
     const coreSignature = JSON.stringify({
       anchor: next.scene.anchor,
-      base: next.scene.base,
       bars: next.scene.bars,
+      graph: next.scene.graph,
       items: next.scene.items,
       generatedGraphVisible: next.scene.generatedGraphVisible,
       dataSourceEnabled: next.scene.dataSource?.enabled !== false
@@ -438,56 +434,17 @@ export class BroadcastRenderer {
     disposeGroup(this.coreGroup);
     this.graphAnimatedObjects = [];
     const scene = this.state.scene;
-    const base = scene.base;
-
-    try {
-      const [geometry, topTexture] = await Promise.all([
-        baseGeometryFromImage(base.imageUrl, Number(base.thickness), Number(base.scale), Number(base.alphaThreshold)),
-        this.loadTexture(base.imageUrl)
-      ]);
-      if (token !== this.coreToken) {
-        geometry.top.dispose();
-        geometry.side.dispose();
-        topTexture?.dispose();
-        return;
-      }
-      const topMaterial = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        map: topTexture,
-        transparent: true,
-        alphaTest: 0.02,
-        side: THREE.DoubleSide,
-        roughness: 0.74,
-        metalness: 0.04
-      });
-      const sideMaterial = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(base.color || '#d9e1ec'),
-        side: THREE.DoubleSide,
-        roughness: 0.8,
-        metalness: 0.03
-      });
-      const topMesh = new THREE.Mesh(geometry.top, topMaterial);
-      const sideMesh = new THREE.Mesh(geometry.side, sideMaterial);
-      topMesh.receiveShadow = true;
-      topMesh.castShadow = true;
-      sideMesh.receiveShadow = true;
-      sideMesh.castShadow = true;
-      this.coreGroup.add(sideMesh, topMesh);
-      this.graphAnimatedObjects.push({ type: 'base', object: sideMesh });
-      this.graphAnimatedObjects.push({ type: 'base', object: topMesh });
-    } catch (error) {
-      console.warn(error.message);
-    }
-
     const items = scene.items;
     const bars = scene.bars;
+    const graph = scene.graph;
     const fixedScaleMaximum = 100;
     const width = Number(bars.width || 0.9);
     const depth = Number(bars.depth || 0.78);
     const gap = Number(bars.gap || 0.48);
     const total = items.length * width + Math.max(0, items.length - 1) * gap;
     const startX = -total / 2 + width / 2;
-    const baseY = Number(base.thickness || 0.32);
+    const baseY = Number(graph.startHeight || 0);
+    const graphOpacity = clamp(Number(graph.opacity ?? 1), 0, 1);
 
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index];
@@ -496,16 +453,92 @@ export class BroadcastRenderer {
       const geometryHeight = Math.max(0.001, height);
       const x = startX + index * (width + gap);
       const geometry = new THREE.BoxGeometry(width, geometryHeight, depth);
-      const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(item.color || '#3b82f6'), roughness: 0.46, metalness: 0.08 });
+      const material = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(item.color || '#3b82f6'),
+        roughness: 0.46,
+        metalness: 0.08,
+        transparent: graphOpacity < 0.999,
+        opacity: graphOpacity,
+        depthWrite: graphOpacity >= 0.999
+      });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.position.set(x, baseY + height / 2, 0);
-      mesh.visible = height > 0.0001;
-      mesh.castShadow = true;
+      mesh.visible = height > 0.0001 && graphOpacity > 0.001;
+      mesh.castShadow = graphOpacity > 0.6;
       mesh.receiveShadow = true;
       this.coreGroup.add(mesh);
-      this.graphAnimatedObjects.push({ type: 'bar', object: mesh, index, baseY, height });
+      this.graphAnimatedObjects.push({ type: 'bar', object: mesh, index, baseY, height, opacity: graphOpacity });
 
-      // Visual limpo: somente a barra 3D. Imagens, valores e boxes não são renderizados.
+      let stackY = baseY + height + 0.12;
+
+      if (graph.showImages === true && item.imageUrl) {
+        try {
+          const imageTexture = await this.loadTexture(item.imageUrl);
+          if (token !== this.coreToken) {
+            imageTexture?.dispose();
+            return;
+          }
+          const sourceImage = imageTexture?.image;
+          const aspect = clamp(
+            Number(sourceImage?.naturalWidth || sourceImage?.width || 1) /
+            Math.max(1, Number(sourceImage?.naturalHeight || sourceImage?.height || 1)),
+            0.35,
+            2.8
+          );
+          const imageHeight = 1.32 * Number(bars.imageScale || 1);
+          const imageWidth = imageHeight * aspect;
+          const imageMaterial = new THREE.SpriteMaterial({
+            map: imageTexture,
+            transparent: true,
+            opacity: graphOpacity,
+            depthTest: true,
+            depthWrite: false
+          });
+          const imageSprite = new THREE.Sprite(imageMaterial);
+          imageSprite.scale.set(imageWidth, imageHeight, 1);
+          imageSprite.position.set(x, stackY + imageHeight / 2, 0);
+          imageSprite.renderOrder = 5;
+          this.coreGroup.add(imageSprite);
+          this.graphAnimatedObjects.push({
+            type: 'image',
+            object: imageSprite,
+            index,
+            scaleX: imageWidth,
+            scaleY: imageHeight,
+            opacity: graphOpacity
+          });
+          stackY += imageHeight + 0.1;
+        } catch (error) {
+          console.warn(`Imagem ignorada para ${item.name || 'item'}: ${error.message}`);
+        }
+      }
+
+      if (graph.showNames === true && item.name) {
+        const nameTexture = textureFromCanvas(createNameCanvas(item));
+        const nameMaterial = new THREE.SpriteMaterial({
+          map: nameTexture,
+          transparent: true,
+          opacity: graphOpacity,
+          depthTest: true,
+          depthWrite: false
+        });
+        const nameSprite = new THREE.Sprite(nameMaterial);
+        const labelScale = Number(bars.labelScale || 1);
+        const nameWidth = 2.75 * labelScale;
+        const nameHeight = 0.59 * labelScale;
+        nameSprite.scale.set(nameWidth, nameHeight, 1);
+        nameSprite.position.set(x, stackY + nameHeight / 2, 0);
+        nameSprite.renderOrder = 6;
+        this.coreGroup.add(nameSprite);
+        this.graphAnimatedObjects.push({
+          type: 'name',
+          object: nameSprite,
+          index,
+          scaleX: nameWidth,
+          scaleY: nameHeight,
+          opacity: graphOpacity
+        });
+      }
     }
 
     if (token !== this.coreToken) return;
@@ -515,7 +548,13 @@ export class BroadcastRenderer {
     const elapsed = this.playbackElapsed();
     this.applyGraphAnimation(elapsed);
     this.canvas.dispatchEvent(new CustomEvent('graph-ready', {
-      detail: { items: scene.items.length }
+      detail: {
+        items: scene.items.length,
+        startHeight: baseY,
+        opacity: graphOpacity,
+        showNames: graph.showNames === true,
+        showImages: graph.showImages === true
+      }
     }));
   }
 
@@ -684,11 +723,9 @@ export class BroadcastRenderer {
     this.modelPivot.visible = Boolean(model.visible && model.url);
     const position = model.position;
     const rotation = model.rotation;
-    const graphEnabled = this.state.scene.generatedGraphVisible !== false && this.state.scene.dataSource?.enabled !== false;
-    const supportHeight = graphEnabled ? Number(this.state.scene.base.thickness || 0) : 0;
     this.modelPivot.position.set(
       Number(position.x || 0),
-      supportHeight + Number(position.y || 0),
+      Number(position.y || 0),
       Number(position.z || 0)
     );
     this.modelPivot.rotation.set(Number(rotation.x || 0) * DEG, Number(rotation.y || 0) * DEG, Number(rotation.z || 0) * DEG);
@@ -824,35 +861,41 @@ export class BroadcastRenderer {
     }
     this.coreGroup.visible = true;
     const playback = this.state.scene.playback || {};
+    const graphOpacity = clamp(Number(this.state.scene.graph?.opacity ?? 1), 0, 1);
     const start = Math.max(0, Number(playback.graphStart || 0));
     const duration = Math.max(0.1, Number(playback.graphDuration || 1.4));
     const itemCount = Math.max(1, this.state.scene.items.length);
     const ease = value => 1 - Math.pow(1 - clamp(value, 0, 1), 3);
-    const baseProgress = ease((elapsed - start) / Math.max(0.12, duration * 0.28));
     const stagger = Math.min(0.16, duration * 0.3 / itemCount);
 
     for (const entry of this.graphAnimatedObjects) {
       const object = entry.object;
       if (!object) continue;
-      if (entry.type === 'base') {
-        object.visible = baseProgress > 0.001;
-        object.scale.y = Math.max(0.001, baseProgress);
-        continue;
-      }
-      const itemStart = start + duration * 0.18 + Number(entry.index || 0) * stagger;
-      const itemDuration = Math.max(0.16, duration * 0.72);
+      const itemStart = start + Number(entry.index || 0) * stagger;
+      const itemDuration = Math.max(0.16, duration * 0.82);
       const progress = ease((elapsed - itemStart) / itemDuration);
+      const targetOpacity = Number(entry.opacity ?? graphOpacity);
+
       if (entry.type === 'bar') {
-        object.visible = entry.height > 0.0001 && progress > 0.001;
+        object.visible = entry.height > 0.0001 && progress > 0.001 && targetOpacity > 0.001;
         object.scale.y = Math.max(0.001, progress);
         object.position.y = entry.baseY + entry.height * progress / 2;
+        if (object.material) {
+          object.material.transparent = targetOpacity < 0.999;
+          object.material.opacity = targetOpacity;
+          object.material.depthWrite = targetOpacity >= 0.999;
+        }
       } else {
-        const reveal = ease((progress - 0.62) / 0.38);
-        object.visible = reveal > 0.001;
-        object.scale.set(Math.max(0.001, entry.scaleX * reveal), Math.max(0.001, entry.scaleY * reveal), 1);
+        const reveal = ease((progress - 0.58) / 0.42);
+        object.visible = reveal > 0.001 && targetOpacity > 0.001;
+        object.scale.set(
+          Math.max(0.001, entry.scaleX * reveal),
+          Math.max(0.001, entry.scaleY * reveal),
+          1
+        );
         if (object.material) {
           object.material.transparent = true;
-          object.material.opacity = reveal;
+          object.material.opacity = targetOpacity * reveal;
         }
       }
     }

@@ -1,4 +1,14 @@
-## 0.8.3
+## 0.8.4
+
+- Remove a base PNG extrudada do gráfico.
+- Adiciona opacidade geral do gráfico.
+- Adiciona altura inicial das barras para alinhamento com o chão ou plataforma do GLB.
+- Mantém GLB e barras no mesmo sistema de coordenadas, sem deslocamento automático.
+- Permite habilitar e desabilitar nomes.
+- Permite habilitar e desabilitar imagens vindas do Google Sheets.
+- Mantém valores e boxes desativados.
+
+## 0.8.4
 
 - Escala das barras fixada em 0–100: o índice 100 alcança a altura configurada para a linha superior.
 - Altura da escala 0–100 ajustável entre 1 e 20 para alinhar ao grid do GLB.
@@ -9,7 +19,7 @@
 
 # Changelog
 
-## 0.8.3
+## 0.8.4
 
 - Corrigido o PLAY do painel que podia chegar ao overlay antes do GLB terminar de carregar.
 - O overlay agora mantém o comando pendente e começa no frame zero somente quando GLB e gráfico estiverem prontos.
