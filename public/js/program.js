@@ -1,5 +1,5 @@
-import { BroadcastRenderer } from './renderer3d.js?v=0.8.2';
-import { api, connectSocket, getRoom } from './cloud.js?v=0.8.2';
+import { BroadcastRenderer } from './renderer3d.js?v=0.8.3';
+import { api, connectSocket, getRoom } from './cloud.js?v=0.8.3';
 
 const canvas = document.getElementById('programCanvas');
 const renderer = new BroadcastRenderer(canvas, { interactive: false });
@@ -21,7 +21,7 @@ function normalizeState(input) {
   next.scene ||= {};
   next.scene.anchor = { x: 0, y: 0, z: 0, rotationY: 0, scale: 1, locked: true, ...(next.scene.anchor || {}) };
   next.scene.base = { imageUrl: '/assets/default-base.png', thickness: 0.32, scale: 8.5, color: '#d9e1ec', alphaThreshold: 0.18, ...(next.scene.base || {}) };
-  next.scene.bars = { width: 0.9, depth: 0.78, maxHeight: 4.8, gap: 0.48, labelScale: 1, imageScale: 1.05, ...(next.scene.bars || {}) };
+  next.scene.bars = { width: 0.9, depth: 0.78, maxHeight: 3.72, gap: 0.48, labelScale: 1, imageScale: 1.05, ...(next.scene.bars || {}) };
   next.scene.items = Array.isArray(next.scene.items) ? next.scene.items : [];
   next.scene.lighting = { ambient: 0.58, key: 1.15, shadowOpacity: 0.28, ...(next.scene.lighting || {}) };
   next.scene.lights = Array.isArray(next.scene.lights) ? next.scene.lights : [];

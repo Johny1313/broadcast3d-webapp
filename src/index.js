@@ -35,7 +35,7 @@ function defaultState() {
       bars: {
         width: 0.9,
         depth: 0.78,
-        maxHeight: 4.8,
+        maxHeight: 3.72,
         gap: 0.48,
         labelScale: 1,
         imageScale: 1.05
@@ -501,17 +501,54 @@ function mediaObjectKey(room, assetId, extension) {
   return `${room}/${assetId}${extension}`;
 }
 
+function isAllowedExternalMediaUrl(value) {
+  let url;
+  try { url = new URL(String(value || '')); } catch { return false; }
+  if (url.protocol !== 'https:') return false;
+  const host = url.hostname.toLowerCase();
+  return host === 'github.com'
+    || host.endsWith('.github.com')
+    || host === 'githubusercontent.com'
+    || host.endsWith('.githubusercontent.com');
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    if (url.pathname === '/api/external-media' && (request.method === 'GET' || request.method === 'HEAD')) {
+      const source = url.searchParams.get('url') || '';
+      if (!isAllowedExternalMediaUrl(source)) {
+        return json({ ok: false, error: 'Use uma URL HTTPS do GitHub Releases ou GitHubusercontent.' }, 400);
+      }
+      const headers = new Headers({
+        accept: request.headers.get('accept') || '*/*',
+        'user-agent': 'Broadcast3D/0.8.3'
+      });
+      const range = request.headers.get('range');
+      if (range) headers.set('range', range);
+      const response = await fetch(source, { method: request.method, redirect: 'follow', headers });
+      if (!response.ok && response.status !== 206) {
+        return json({ ok: false, error: `Falha ao carregar mídia externa (${response.status}).` }, response.status);
+      }
+      const responseHeaders = new Headers(response.headers);
+      responseHeaders.set('access-control-allow-origin', '*');
+      responseHeaders.set('cross-origin-resource-policy', 'cross-origin');
+      responseHeaders.set('cache-control', 'public, max-age=3600');
+      responseHeaders.set('x-content-type-options', 'nosniff');
+      return new Response(request.method === 'HEAD' ? null : response.body, {
+        status: response.status,
+        headers: responseHeaders
+      });
+    }
 
     if (url.pathname === '/api/health') {
       return json({
         ok: true,
         service: 'broadcast3d-cloudflare',
-        version: '0.8.2',
+        version: '0.8.3',
         realtime: 'durable-object-websocket',
-        storage: 'durable-object-sqlite + r2',
+        storage: 'durable-object-sqlite + external-github-media',
         mediaBucket: Boolean(env.MEDIA_BUCKET),
         authRequired: Boolean(String(env.CONTROL_TOKEN || '').trim())
       });
@@ -622,7 +659,7 @@ export default {
       try {
         const stateResponse = await routeToRoom(new Request(`${url.origin}/api/state?room=${encodeURIComponent(room)}`), env, room);
         const statePayload = await stateResponse.json();
-        return json({ ok: true, version: '0.8.2', room, hasState: Boolean(statePayload?.state), activeCamera: statePayload?.state?.activeCamera || 1, itemCount: statePayload?.state?.scene?.items?.length || 0 });
+        return json({ ok: true, version: '0.8.3', room, hasState: Boolean(statePayload?.state), activeCamera: statePayload?.state?.activeCamera || 1, itemCount: statePayload?.state?.scene?.items?.length || 0 });
       } catch (error) {
         return json({ ok: false, error: error.message || 'Falha ao validar overlay.' }, 500);
       }
@@ -740,7 +777,13 @@ export class BroadcastRoom extends DurableObject {
         const previous = new Map(state.scene.items.map(item => [String(item.name).trim().toLowerCase(), item]));
         state.scene.items = result.items.map(item => {
           const old = previous.get(String(item.name).trim().toLowerCase());
-          return { ...item, imageUrl: item.imageUrl || old?.imageUrl || '' };
+          const hasLockedColor = Boolean(old?.colorLocked && /^#[0-9a-f]{6}$/i.test(String(old.color || '')));
+          return {
+            ...item,
+            color: hasLockedColor ? old.color : item.color,
+            colorLocked: hasLockedColor,
+            imageUrl: item.imageUrl || old?.imageUrl || ''
+          };
         });
         state.scene.generatedGraphVisible = true;
         state.scene.dataSource = {

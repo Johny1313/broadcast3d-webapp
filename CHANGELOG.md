@@ -1,6 +1,15 @@
+## 0.8.3
+
+- Escala das barras fixada em 0–100: o índice 100 alcança a altura configurada para a linha superior.
+- Altura da escala 0–100 ajustável entre 1 e 20 para alinhar ao grid do GLB.
+- Removidos imagens, círculos, valores e boxes acima das barras; o overlay renderiza somente as barras.
+- Cores individuais ajustáveis no painel, com persistência mesmo durante o auto-refresh do Google Sheets.
+- Modelos GLB/OBJ e base PNG carregados por URL do GitHub Releases, sem dependência de R2.
+- Proxy de mídia externa com suporte a Range, CORS e cache.
+
 # Changelog
 
-## 0.8.2
+## 0.8.3
 
 - Corrigido o PLAY do painel que podia chegar ao overlay antes do GLB terminar de carregar.
 - O overlay agora mantém o comando pendente e começa no frame zero somente quando GLB e gráfico estiverem prontos.

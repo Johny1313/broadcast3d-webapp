@@ -1,4 +1,13 @@
-# Broadcast3D Cloud v0.8.2
+# Broadcast3D Cloud v0.8.3
+
+## Gráfico limpo 0–100
+
+A versão 0.8.3 usa o campo `indice` como escala absoluta entre 0 e 100. A altura configurada no painel representa exatamente a linha 100. O gráfico nativo exibe somente as barras; imagens, valores e boxes foram removidos. Cada barra possui seletor de cor persistente.
+
+## Mídia sem R2
+
+Cole a URL direta de um asset do GitHub Release no painel de Modelo. O Worker entrega o arquivo pelo endpoint `/api/external-media`, permitindo que painel e overlay funcionem em redes diferentes sem R2.
+
 
 ## PLAY confiável no overlay do vMix
 
@@ -164,7 +173,7 @@ npm run deploy
 O projeto deve ser publicado como **Cloudflare Worker**, não como site estático no Pages.
 
 
-## v0.8.2 — Sheets/CSV habilitável e índice das barras
+## v0.8.3 — Sheets/CSV habilitável e índice das barras
 
 - Chave para habilitar ou desabilitar os dados do Google Sheets/CSV sem apagar a última leitura.
 - Ao desabilitar, o gráfico gerado fica oculto e a atualização automática é interrompida.

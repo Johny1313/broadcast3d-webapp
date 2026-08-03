@@ -1,8 +1,8 @@
 {
   "name": "broadcast3d-cloudflare-webapp",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "private": true,
-  "description": "Webapp de overlay 3D transparente para vMix com PLAY sincronizado após carregamento, GLB em R2, Google Sheets habilitável e quatro câmeras virtuais.",
+  "description": "Webapp Broadcast3D com GLB por GitHub Releases, Google Sheets, escala fixa 0–100, cores ajustáveis e overlay transparente para vMix.",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",

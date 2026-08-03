@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Broadcast3D Cloud v0.8.2</title>
-  <link rel="stylesheet" href="/styles.css?v=0.8.2">
+  <title>Broadcast3D Cloud v0.8.3</title>
+  <link rel="stylesheet" href="/styles.css?v=0.8.3">
   <script type="importmap">
   {
     "imports": {
@@ -19,7 +19,7 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark">3D</div>
-        <div><strong>Broadcast3D Cloud <small class="version-badge">v0.8.2</small></strong><span>PLAY único para GLB + gráfico do Google Sheets · overlay transparente para vMix</span></div>
+        <div><strong>Broadcast3D Cloud <small class="version-badge">v0.8.3</small></strong><span>PLAY único para GLB + gráfico do Google Sheets · overlay transparente para vMix</span></div>
       </div>
       <div class="top-actions cloud-top-actions">
         <span id="connectionBadge" class="status-badge">Conectando</span>
@@ -39,7 +39,7 @@
 
     <section class="quick-actions workflow-actions" aria-label="Fluxo principal">
       <div class="quick-actions-title"><strong>Fluxo principal</strong><span>1. Modelo · 2. Dados · 3. PLAY · 4. Câmeras</span></div>
-      <button id="quickModelButton" class="quick-action primary-action" type="button"><span class="quick-icon">1</span><span><strong>Importar GLB / OBJ</strong><small>Todos os clipes aguardam o PLAY</small></span></button>
+      <button id="quickModelButton" class="quick-action primary-action" type="button"><span class="quick-icon">1</span><span><strong>Carregar GLB / OBJ por URL</strong><small>GitHub Release · todos os clipes aguardam o PLAY</small></span></button>
       <button id="quickSheetsButton" class="quick-action" type="button"><span class="quick-icon">2</span><span><strong>Google Sheets</strong><small>Substitui a importação por CSV</small></span></button>
       <button id="quickLightsButton" class="quick-action" type="button"><span class="quick-icon">3</span><span><strong>Ajustar luzes</strong><small>Ambiente e pontos de luz</small></span></button>
       <button id="quickLinksButton" class="quick-action" type="button"><span class="quick-icon">4</span><span><strong>Câmeras / Stream Deck</strong><small>Links reais CAM 1 a CAM 4</small></span></button>
@@ -49,7 +49,7 @@
       <aside class="sidebar left-panel">
         <section class="panel-section import-spotlight">
           <div class="section-title"><span>Modelo principal</span><span class="pill ready">GLB / OBJ</span></div>
-          <button id="leftModelButton" class="button primary full model-import-main" type="button">+ IMPORTAR MODELO 3D</button>
+          <button id="leftModelButton" class="button primary full model-import-main" type="button">+ CARREGAR URL DO MODELO</button>
           <div id="modelQuickStatus" class="file-status prominent">Nenhum modelo carregado</div>
           <button id="openModelControlsButton" class="button secondary full" type="button">Abrir controles do modelo</button>
           <p class="helper">GLB e gráfico do Google Sheets podem ficar juntos. O PLAY inicia os dois; ao terminar, todos os elementos permanecem na tela.</p>
@@ -143,10 +143,10 @@
 
         <section class="tab-panel active" data-panel="model">
           <div class="section-title"><span>Modelo 3D principal</span><span id="modelFormatPill" class="pill">VAZIO</span></div>
-          <label class="upload-drop model-upload-drop" for="modelInput"><strong>IMPORTAR GLB OU OBJ</strong><span>GLB: materiais, texturas e animações · limite 48 MB</span></label>
-          <input id="modelInput" type="file" accept=".glb,.obj,model/gltf-binary,text/plain" hidden>
+          <label class="field">URL do GLB ou OBJ no GitHub Release<input id="modelUrlInput" type="url" autocomplete="off" spellcheck="false" placeholder="https://github.com/.../releases/download/media-v1/modelo.glb"></label>
+          <button id="loadModelUrlButton" class="button primary full" type="button">CARREGAR MODELO DA URL</button>
           <div id="modelFileName" class="file-status">Nenhum modelo carregado</div>
-          <div class="model-import-rule">Ao importar: <b>modelo visível</b> · <b>gráfico preservado</b> · <b>animações aguardando o PLAY</b>.</div>
+          <div class="model-import-rule">O Worker usa um proxy seguro para o GitHub. O modelo fica acessível no overlay em computadores e redes diferentes.</div>
           <label class="switch-row"><input id="modelVisible" type="checkbox"><span>Exibir modelo</span></label>
 
           <label class="range-field">Posição X <output id="modelXOutput"></output><input id="modelX" type="range" min="-12" max="12" step="0.01"></label>
@@ -254,17 +254,17 @@
 
         <section class="tab-panel" data-panel="graph">
           <div class="section-title"><span>Gráfico nativo opcional</span><span id="graphVisibilityPill" class="pill">VISÍVEL</span></div>
-          <label class="switch-row prominent-switch"><input id="generatedGraphVisible" type="checkbox"><span>Exibir base PNG, barras, textos e imagens</span></label>
+          <label class="switch-row prominent-switch"><input id="generatedGraphVisible" type="checkbox"><span>Exibir base PNG e barras</span></label>
           <p class="helper">O gráfico pode ser exibido junto com o GLB. O mesmo PLAY inicia ambos e mantém o resultado final em tela.</p>
           <div class="divider"></div>
           <div class="section-title"><span>Animação do gráfico</span><span class="pill">TIMELINE</span></div>
           <label class="range-field">Começar após <output id="graphAnimationStartOutput"></output><input id="graphAnimationStart" type="range" min="0" max="15" step="0.1"></label>
           <label class="range-field">Duração da entrada <output id="graphAnimationDurationOutput"></output><input id="graphAnimationDuration" type="range" min="0.2" max="8" step="0.1"></label>
-          <p class="helper">O tempo é contado a partir do PLAY. A base aparece primeiro; depois as barras crescem e as imagens e textos entram. No final, tudo permanece visível.</p>
+          <p class="helper">O tempo é contado a partir do PLAY. A base aparece primeiro e depois as barras crescem. No final, tudo permanece visível.</p>
           <div class="divider"></div>
           <div class="section-title"><span>Base PNG extrudada</span></div>
-          <label class="upload-drop" for="baseInput"><strong>Carregar PNG transparente</strong><span>A silhueta vira uma base extrudada</span></label>
-          <input id="baseInput" type="file" accept="image/png" hidden>
+          <label class="field">URL do PNG transparente no GitHub<input id="baseImageUrlInput" type="url" autocomplete="off" spellcheck="false" placeholder="https://github.com/.../releases/download/media-v1/base.png"></label>
+          <button id="loadBaseUrlButton" class="button secondary full" type="button">CARREGAR BASE DA URL</button>
           <label class="range-field">Extrusão <output id="baseThicknessOutput"></output><input id="baseThickness" type="range" min="0.05" max="1.5" step="0.01"></label>
           <label class="range-field">Tamanho <output id="baseScaleOutput"></output><input id="baseScale" type="range" min="3" max="18" step="0.1"></label>
           <label class="range-field">Leitura do recorte <output id="alphaThresholdOutput"></output><input id="alphaThreshold" type="range" min="0.02" max="0.8" step="0.01"></label>
@@ -273,12 +273,11 @@
           <div class="section-title"><span>Barras</span></div>
           <label class="range-field">Largura <output id="barWidthOutput"></output><input id="barWidth" type="range" min="0.2" max="2.2" step="0.02"></label>
           <label class="range-field">Profundidade <output id="barDepthOutput"></output><input id="barDepth" type="range" min="0.2" max="2" step="0.02"></label>
-          <label class="range-field">Altura máxima <output id="barHeightOutput"></output><input id="barHeight" type="range" min="1" max="8" step="0.1"></label>
+          <label class="range-field">Altura da escala 0–100 <output id="barHeightOutput"></output><input id="barHeight" type="range" min="1" max="20" step="0.01"></label>
           <label class="range-field">Espaçamento <output id="barGapOutput"></output><input id="barGap" type="range" min="0" max="2" step="0.02"></label>
-          <label class="range-field">Escala das imagens <output id="imageScaleOutput"></output><input id="imageScale" type="range" min="0.4" max="2.2" step="0.02"></label>
-          <label class="range-field">Escala dos textos <output id="labelScaleOutput"></output><input id="labelScale" type="range" min="0.5" max="1.8" step="0.02"></label>
+          <p class="helper">A escala é fixa: índice 0 fica na base e índice 100 alcança a altura configurada acima. Ajuste esse controle para coincidir exatamente com a linha 100 do GLB.</p>
           <div class="divider"></div>
-          <div class="section-title"><span>Itens recebidos do Sheets</span></div>
+          <div class="section-title"><span>Cores das barras</span><span class="pill">AJUSTÁVEL</span></div>
           <div id="barItems" class="bar-items"></div>
         </section>
 
@@ -322,6 +321,6 @@
     </div>
   </dialog>
 
-  <script type="module" src="/js/operator.js?v=0.8.2"></script>
+  <script type="module" src="/js/operator.js?v=0.8.3"></script>
 </body>
 </html>

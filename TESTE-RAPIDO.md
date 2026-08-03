@@ -1,7 +1,7 @@
-# Teste rápido da v0.8.2
+# Teste rápido da v0.8.3
 
 1. Abra `/api/health`.
-2. Confirme `version: 0.8.2` e `mediaBucket: true`.
+2. Confirme `version: 0.8.3` e `mediaBucket: true`.
 3. Abra o painel com `?room=studio`.
 4. Importe `SP05.glb`.
 5. Acompanhe o progresso de upload até 100%.

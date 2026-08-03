@@ -1,5 +1,5 @@
-import { BroadcastRenderer } from './renderer3d.js?v=0.8.2';
-import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programPreviewUrl, programUrl, setConnection, uploadMedia } from './cloud.js?v=0.8.2';
+import { BroadcastRenderer } from './renderer3d.js?v=0.8.3';
+import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programPreviewUrl, programUrl, setConnection, uploadMedia } from './cloud.js?v=0.8.3';
 
 const $ = id => document.getElementById(id);
 const DEG = Math.PI / 180;
@@ -40,7 +40,7 @@ function normalizeState(input) {
   next.scene ||= {};
   next.scene.anchor = { x: 0, y: 0, z: 0, rotationY: 0, scale: 1, locked: true, ...(next.scene.anchor || {}) };
   next.scene.base = { imageUrl: '/assets/default-base.png', thickness: 0.32, scale: 8.5, color: '#d9e1ec', alphaThreshold: 0.18, ...(next.scene.base || {}) };
-  next.scene.bars = { width: 0.9, depth: 0.78, maxHeight: 4.8, gap: 0.48, labelScale: 1, imageScale: 1.05, ...(next.scene.bars || {}) };
+  next.scene.bars = { width: 0.9, depth: 0.78, maxHeight: 3.72, gap: 0.48, labelScale: 1, imageScale: 1.05, ...(next.scene.bars || {}) };
   next.scene.items = Array.isArray(next.scene.items) ? next.scene.items.map(item => ({ ...item, scale: Number.isFinite(Number(item.scale ?? item.indice)) ? Number(item.scale ?? item.indice) : Number(item.value || 0) })) : [];
   next.scene.lighting = { ambient: 0.58, key: 1.15, shadowOpacity: 0.28, ...(next.scene.lighting || {}) };
   next.scene.lights = Array.isArray(next.scene.lights) ? next.scene.lights : [defaultLight(1), { ...defaultLight(2), color: '#6fa8ff', x: 4, z: -2, intensity: 1.4 }];
@@ -253,12 +253,11 @@ function renderSceneControls() {
   $('baseScale').value = state.scene.base.scale;
   $('alphaThreshold').value = state.scene.base.alphaThreshold;
   $('baseColor').value = state.scene.base.color;
+  if ($('baseImageUrlInput')) $('baseImageUrlInput').value = state.scene.base.sourceUrl || '';
   $('barWidth').value = state.scene.bars.width;
   $('barDepth').value = state.scene.bars.depth;
   $('barHeight').value = state.scene.bars.maxHeight;
   $('barGap').value = state.scene.bars.gap;
-  $('imageScale').value = state.scene.bars.imageScale;
-  $('labelScale').value = state.scene.bars.labelScale;
   $('ambientLight').value = state.scene.lighting.ambient;
   $('keyLight').value = state.scene.lighting.key;
   $('shadowOpacity').value = state.scene.lighting.shadowOpacity;
@@ -284,8 +283,6 @@ function renderReadouts() {
     ['barDepthOutput', Number(state.scene.bars.depth).toFixed(2)],
     ['barHeightOutput', Number(state.scene.bars.maxHeight).toFixed(1)],
     ['barGapOutput', Number(state.scene.bars.gap).toFixed(2)],
-    ['imageScaleOutput', Number(state.scene.bars.imageScale).toFixed(2)],
-    ['labelScaleOutput', Number(state.scene.bars.labelScale).toFixed(2)],
     ['ambientLightOutput', Number(state.scene.lighting.ambient).toFixed(2)],
     ['keyLightOutput', Number(state.scene.lighting.key).toFixed(2)],
     ['shadowOpacityOutput', Number(state.scene.lighting.shadowOpacity).toFixed(2)],
@@ -324,25 +321,29 @@ function renderBarItems() {
   list.innerHTML = '';
   state.scene.items.forEach(item => {
     const row = document.createElement('div');
-    row.className = 'bar-item';
-    const preview = item.imageUrl || makeInitialSvg(item);
-    row.innerHTML = `<img class="bar-thumb" src="${preview}" alt=""><div><strong>${escapeHtml(item.name)}</strong><small>Valor ${item.value} · índice ${Number(item.scale ?? item.value).toLocaleString('pt-BR')} · ${item.color}</small></div><button type="button">Imagem</button><input type="file" accept="image/png,image/jpeg,image/webp" hidden>`;
-    const input = row.querySelector('input');
-    row.querySelector('button').addEventListener('click', () => input.click());
-    input.addEventListener('change', async () => {
-      const file = input.files[0];
-      if (!file) return;
-      try {
-        item.imageUrl = await uploadFile(file);
-        renderer.setState(state);
-        renderBarItems();
-        queueSave('Imagem atualizada');
-      } catch (error) {
-        showToast(error.message);
-      }
+    row.className = 'bar-item color-only';
+    row.innerHTML = `
+      <span class="bar-color-swatch" style="--bar-color:${escapeHtml(item.color || '#3b82f6')}"></span>
+      <div><strong>${escapeHtml(item.name)}</strong><small>Índice ${Number(item.scale ?? item.value).toLocaleString('pt-BR')} · escala fixa 0–100</small></div>
+      <label class="bar-color-picker">Cor<input type="color" value="${escapeHtml(item.color || '#3b82f6')}"></label>
+      <button class="bar-color-reset" type="button" ${item.colorLocked ? '' : 'disabled'}>Planilha</button>`;
+    const colorInput = row.querySelector('input[type="color"]');
+    colorInput.addEventListener('input', event => {
+      item.color = event.target.value;
+      item.colorLocked = true;
+      row.querySelector('.bar-color-swatch').style.setProperty('--bar-color', item.color);
+      row.querySelector('.bar-color-reset').disabled = false;
+      renderer.setState(state);
+      queueSave(`Cor de ${item.name} atualizada`);
+    });
+    row.querySelector('.bar-color-reset').addEventListener('click', async () => {
+      item.colorLocked = false;
+      queueSave(`Cor de ${item.name} liberada para a planilha`);
+      await refreshGoogleSheet({ persist: true, silent: true });
     });
     list.appendChild(row);
   });
+  if (!state.scene.items.length) list.innerHTML = '<span class="helper">Nenhuma barra carregada.</span>';
 }
 
 function makeInitialSvg(item) {
@@ -498,6 +499,7 @@ function renderModelControls() {
   const model = state.scene.model;
   suppressInputs = true;
   $('modelVisible').checked = Boolean(model.visible);
+  if ($('modelUrlInput')) $('modelUrlInput').value = model.sourceUrl || '';
   $('modelFileName').textContent = model.name || 'Nenhum modelo carregado';
   if ($('modelQuickStatus')) $('modelQuickStatus').textContent = model.name || 'Nenhum modelo carregado';
   $('modelFormatPill').textContent = model.format ? model.format.toUpperCase() : 'VAZIO';
@@ -647,7 +649,7 @@ function bindSceneInputs() {
     ['projectName', 'projectName', 'string'],
     ['anchorX', 'scene.anchor.x', 'number'], ['anchorZ', 'scene.anchor.z', 'number'], ['anchorRotation', 'scene.anchor.rotationY', 'number'], ['anchorScale', 'scene.anchor.scale', 'number'], ['anchorLocked', 'scene.anchor.locked', 'checked'],
     ['baseThickness', 'scene.base.thickness', 'number'], ['baseScale', 'scene.base.scale', 'number'], ['alphaThreshold', 'scene.base.alphaThreshold', 'number'], ['baseColor', 'scene.base.color', 'string'],
-    ['barWidth', 'scene.bars.width', 'number'], ['barDepth', 'scene.bars.depth', 'number'], ['barHeight', 'scene.bars.maxHeight', 'number'], ['barGap', 'scene.bars.gap', 'number'], ['imageScale', 'scene.bars.imageScale', 'number'], ['labelScale', 'scene.bars.labelScale', 'number'],
+    ['barWidth', 'scene.bars.width', 'number'], ['barDepth', 'scene.bars.depth', 'number'], ['barHeight', 'scene.bars.maxHeight', 'number'], ['barGap', 'scene.bars.gap', 'number'],
     ['guideOpacity', 'scene.guideOpacity', 'number'],
     ['ambientLight', 'scene.lighting.ambient', 'number'], ['keyLight', 'scene.lighting.key', 'number'], ['shadowOpacity', 'scene.lighting.shadowOpacity', 'number'],
     ['modelVisible', 'scene.model.visible', 'checked'],
@@ -699,45 +701,53 @@ function bindCameraControls() {
   $('resetViewButton').addEventListener('click', () => selectCamera(state.selectedCamera, false));
 }
 
+function proxiedExternalUrl(source) {
+  const value = String(source || '').trim();
+  let url;
+  try { url = new URL(value); } catch { throw new Error('Informe uma URL HTTPS válida.'); }
+  if (url.protocol !== 'https:') throw new Error('A URL precisa usar HTTPS.');
+  const host = url.hostname.toLowerCase();
+  if (!(host === 'github.com' || host.endsWith('.github.com') || host === 'githubusercontent.com' || host.endsWith('.githubusercontent.com'))) {
+    throw new Error('Use uma URL do GitHub Releases ou GitHubusercontent.');
+  }
+  return `/api/external-media?url=${encodeURIComponent(url.toString())}`;
+}
+
+function fileNameFromUrl(value) {
+  try { return decodeURIComponent(new URL(value).pathname.split('/').filter(Boolean).at(-1) || 'modelo.glb'); }
+  catch { return 'modelo.glb'; }
+}
+
 function bindUploads() {
-  $('baseInput').addEventListener('change', async () => {
-    const file = $('baseInput').files[0];
-    if (!file) return;
+  $('loadBaseUrlButton').addEventListener('click', () => {
     try {
-      state.scene.base.imageUrl = await uploadFile(file);
+      const sourceUrl = String($('baseImageUrlInput').value || '').trim();
+      const name = fileNameFromUrl(sourceUrl).toLowerCase();
+      if (!name.endsWith('.png')) throw new Error('A base precisa ser um arquivo PNG transparente.');
+      state.scene.base.sourceUrl = sourceUrl;
+      state.scene.base.imageUrl = proxiedExternalUrl(sourceUrl);
       renderer.setState(state);
-      queueSave('Base PNG atualizada');
-    } catch (error) {
-      showToast(error.message);
-    }
+      queueSave('Base PNG carregada por URL');
+    } catch (error) { showToast(error.message); }
   });
 
-  $('guideInput').addEventListener('change', async () => {
+  $('guideInput').addEventListener('change', () => {
     const file = $('guideInput').files[0];
     if (!file) return;
-    try {
-      selectedCamera().guideUrl = await uploadFile(file);
-      updateGuide(selectedCamera());
-      queueSave('Guia salvo');
-    } catch (error) {
-      showToast(error.message);
-    }
+    selectedCamera().guideUrl = URL.createObjectURL(file);
+    updateGuide(selectedCamera());
+    showToast('Guia carregado localmente na prévia');
   });
 
-  $('modelInput').addEventListener('change', async () => {
-    const file = $('modelInput').files[0];
-    if (!file) return;
-    const extension = file.name.split('.').pop().toLowerCase();
-    if (!['glb', 'obj'].includes(extension)) return showToast('Use um arquivo GLB ou OBJ.');
+  $('loadModelUrlButton').addEventListener('click', () => {
     try {
-      await validateModelFile(file, extension);
-      showToast(`Enviando ${file.name}…`);
-      const statusNode = $('modelQuickStatus');
-      state.scene.model.url = await uploadFile(file, (loaded, total) => {
-        const percent = total > 0 ? Math.min(100, Math.round(loaded / total * 100)) : 0;
-        if (statusNode) statusNode.textContent = `Upload ${percent}% · ${file.name}`;
-      });
-      state.scene.model.name = file.name;
+      const sourceUrl = String($('modelUrlInput').value || '').trim();
+      const fileName = fileNameFromUrl(sourceUrl);
+      const extension = fileName.split('.').pop().toLowerCase();
+      if (!['glb', 'obj'].includes(extension)) throw new Error('A URL precisa terminar em .glb ou .obj.');
+      state.scene.model.url = proxiedExternalUrl(sourceUrl);
+      state.scene.model.sourceUrl = sourceUrl;
+      state.scene.model.name = fileName;
       state.scene.model.format = extension;
       state.scene.model.visible = true;
       state.scene.model.animation = { speed: 1 };
@@ -748,23 +758,19 @@ function bindUploads() {
       renderer.setState(state);
       renderAll();
       openPanel('model');
-      queueSave(`${extension.toUpperCase()} importado · pronto para PLAY conjunto`);
-    } catch (error) {
-      showToast(error.message);
-    } finally {
-      $('modelInput').value = '';
-    }
+      queueSave(`${extension.toUpperCase()} carregado do GitHub · pronto para PLAY`);
+    } catch (error) { showToast(error.message); }
   });
 
   $('removeGuideButton').addEventListener('click', () => {
     selectedCamera().guideUrl = '';
     updateGuide(selectedCamera());
-    queueSave('Guia removido');
+    showToast('Guia removido');
   });
 
   $('removeModelButton').addEventListener('click', () => {
     state.scene.model = {
-      url: '', name: '', format: '', visible: true,
+      url: '', sourceUrl: '', name: '', format: '', visible: true,
       position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: 1,
       animation: { speed: 1 }
     };
@@ -908,8 +914,8 @@ function bindSheetControls() {
 
 function bindActions() {
   document.querySelectorAll('[data-cut]').forEach(button => button.addEventListener('click', () => cutCamera(Number(button.dataset.cut))));
-  $('quickModelButton').addEventListener('click', () => $('modelInput').click());
-  $('leftModelButton').addEventListener('click', () => $('modelInput').click());
+  $('quickModelButton').addEventListener('click', () => { openPanel('model'); $('modelUrlInput').focus(); });
+  $('leftModelButton').addEventListener('click', () => { openPanel('model'); $('modelUrlInput').focus(); });
   $('openModelControlsButton').addEventListener('click', () => openPanel('model'));
   $('quickSheetsButton').addEventListener('click', () => openPanel('sheets'));
   $('quickLightsButton').addEventListener('click', () => openPanel('lights'));

@@ -186,7 +186,7 @@ function normalizedState(input) {
   state.scene ||= {};
   state.scene.anchor = { x: 0, y: 0, z: 0, rotationY: 0, scale: 1, locked: true, ...(state.scene.anchor || {}) };
   state.scene.base = { imageUrl: '/assets/default-base.png', thickness: 0.32, scale: 8.5, color: '#d9e1ec', alphaThreshold: 0.18, ...(state.scene.base || {}) };
-  state.scene.bars = { width: 0.9, depth: 0.78, maxHeight: 4.8, gap: 0.48, labelScale: 1, imageScale: 1.05, ...(state.scene.bars || {}) };
+  state.scene.bars = { width: 0.9, depth: 0.78, maxHeight: 3.72, gap: 0.48, labelScale: 1, imageScale: 1.05, ...(state.scene.bars || {}) };
   state.scene.items = Array.isArray(state.scene.items) ? state.scene.items.map(item => ({ ...item, scale: Number.isFinite(Number(item.scale ?? item.indice)) ? Number(item.scale ?? item.indice) : Number(item.value || 0) })) : [];
   state.scene.lighting = { ambient: 0.58, key: 1.15, shadowOpacity: 0.28, ...(state.scene.lighting || {}) };
   state.scene.lights = Array.isArray(state.scene.lights) ? state.scene.lights : [];
@@ -481,7 +481,7 @@ export class BroadcastRenderer {
 
     const items = scene.items;
     const bars = scene.bars;
-    const maxScale = Math.max(1, ...items.map(item => Number(item.scale ?? item.indice ?? item.value) || 0));
+    const fixedScaleMaximum = 100;
     const width = Number(bars.width || 0.9);
     const depth = Number(bars.depth || 0.78);
     const gap = Number(bars.gap || 0.48);
@@ -491,46 +491,21 @@ export class BroadcastRenderer {
 
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index];
-      const scaleValue = Number(item.scale ?? item.indice ?? item.value) || 0;
-      const height = Math.max(0.22, scaleValue / maxScale * Number(bars.maxHeight || 4.8));
+      const scaleValue = clamp(Number(item.scale ?? item.indice ?? item.value) || 0, 0, fixedScaleMaximum);
+      const height = scaleValue / fixedScaleMaximum * Number(bars.maxHeight || 3.72);
+      const geometryHeight = Math.max(0.001, height);
       const x = startX + index * (width + gap);
-      const geometry = new THREE.BoxGeometry(width, height, depth);
+      const geometry = new THREE.BoxGeometry(width, geometryHeight, depth);
       const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(item.color || '#3b82f6'), roughness: 0.46, metalness: 0.08 });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.position.set(x, baseY + height / 2, 0);
+      mesh.visible = height > 0.0001;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       this.coreGroup.add(mesh);
       this.graphAnimatedObjects.push({ type: 'bar', object: mesh, index, baseY, height });
 
-      let iconTexture;
-      try {
-        iconTexture = item.imageUrl ? await this.loadTexture(item.imageUrl) : textureFromCanvas(createPlaceholderCanvas(item));
-      } catch {
-        iconTexture = textureFromCanvas(createPlaceholderCanvas(item));
-      }
-      if (token !== this.coreToken) {
-        iconTexture?.dispose();
-        return;
-      }
-      const iconMaterial = new THREE.SpriteMaterial({ map: iconTexture, transparent: true, alphaTest: 0.02, depthTest: true, depthWrite: false });
-      const icon = new THREE.Sprite(iconMaterial);
-      const iconScale = 1.28 * Number(bars.imageScale || 1);
-      icon.scale.set(iconScale, iconScale, 1);
-      icon.position.set(x, baseY + height + iconScale * 0.62, 0);
-      icon.renderOrder = 5;
-      this.coreGroup.add(icon);
-      this.graphAnimatedObjects.push({ type: 'icon', object: icon, index, scaleX: iconScale, scaleY: iconScale });
-
-      const labelTexture = textureFromCanvas(createLabelCanvas(item));
-      const labelMaterial = new THREE.SpriteMaterial({ map: labelTexture, transparent: true, alphaTest: 0.02, depthTest: true, depthWrite: false });
-      const label = new THREE.Sprite(labelMaterial);
-      const labelScale = Number(bars.labelScale || 1);
-      label.scale.set(2.4 * labelScale, 0.78 * labelScale, 1);
-      label.position.set(x, baseY + height + iconScale + 0.62 * labelScale, 0);
-      label.renderOrder = 6;
-      this.coreGroup.add(label);
-      this.graphAnimatedObjects.push({ type: 'label', object: label, index, scaleX: 2.4 * labelScale, scaleY: 0.78 * labelScale });
+      // Visual limpo: somente a barra 3D. Imagens, valores e boxes não são renderizados.
     }
 
     if (token !== this.coreToken) return;
@@ -868,7 +843,7 @@ export class BroadcastRenderer {
       const itemDuration = Math.max(0.16, duration * 0.72);
       const progress = ease((elapsed - itemStart) / itemDuration);
       if (entry.type === 'bar') {
-        object.visible = progress > 0.001;
+        object.visible = entry.height > 0.0001 && progress > 0.001;
         object.scale.y = Math.max(0.001, progress);
         object.position.y = entry.baseY + entry.height * progress / 2;
       } else {
