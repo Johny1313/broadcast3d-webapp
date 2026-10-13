@@ -114,3 +114,18 @@
 /* v0.8.4 */
 .graph-display-options{align-items:stretch}
 .graph-display-options .switch-row{min-height:44px}
+
+/* v0.8.5 — upload de GLB do computador */
+.model-upload-drop{margin:4px 0 9px;transition:border-color .2s,background .2s;outline:none}
+.model-upload-drop.dragover,.model-upload-drop:focus-visible{background:#164a77;border-color:#80c6ff;box-shadow:0 0 0 2px rgba(57,154,255,.26)}
+.model-upload-drop span{line-height:1.45}
+.model-upload-feedback{margin:9px 0 7px;padding:9px;border-radius:7px;background:#0b2238;color:#a9d3ff;border:1px solid #29577b;line-height:1.4;font-size:11px;overflow-wrap:anywhere}
+.model-upload-feedback.error{background:#34171d;color:#ffb8b8;border-color:#a44b52}
+.model-upload-feedback.success{background:#102f25;color:#9fe6bc;border-color:#347b54}
+.model-upload-progress{display:block;appearance:auto;width:100%;height:10px;margin:7px 0 9px;accent-color:#238aff}
+.model-upload-progress[hidden]{display:none}
+.model-url-alternative{margin:10px 0;border:1px solid #34506d;border-radius:8px;padding:9px;background:#0b1929}
+.model-url-alternative summary{font-size:11px;color:#aec9e8;cursor:pointer;font-weight:700}
+.model-url-alternative .field{margin-top:12px}
+button:disabled{opacity:.55;cursor:not-allowed}
+.model-storage-status{font-size:10px;color:#77cdb2;background:#10251e;border:1px solid #20543d;padding:7px 9px;margin:8px 0;border-radius:7px}

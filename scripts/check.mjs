@@ -6,7 +6,7 @@ const files = [
   'wrangler.jsonc', 'src/index.js', 'public/index.html', 'public/program.html',
   'public/version.json', 'public/js/operator.js', 'public/js/program.js',
   'public/js/renderer3d.js', 'public/js/cloud.js', 'public/styles.css',
-  'README.md', 'VMIX.md', 'streamdeck/play-geral.bat', 'streamdeck/preparar-cena.bat'
+  'README.md', 'VMIX.md', 'wrangler.r2.jsonc', 'GUIA-UPLOAD-GLB.md', 'streamdeck/play-geral.bat', 'streamdeck/preparar-cena.bat'
 ];
 for (const file of files) await access(new URL(`../${file}`, import.meta.url));
 
@@ -17,8 +17,8 @@ for (const file of ['src/index.js','public/js/operator.js','public/js/program.js
 
 const worker = await readFile(new URL('../src/index.js', import.meta.url), 'utf8');
 for (const required of [
-  'BroadcastRoom', '/api/state', '/api/ws', '/api/upload', '/api/sheets', '/api/sheets/sync',
-  '/api/overlay-check', '/api/external-media', "version: '0.8.4'", 'state.version = 8', "playback.mode = 'playing'",
+  'BroadcastRoom', '/api/state', '/api/ws', '/api/upload', '/api/media/upload', '/api/sheets', '/api/sheets/sync',
+  '/api/overlay-check', '/api/external-media', "version: '0.8.5'", 'state.version = 8', "playback.mode = 'playing'",
   "playback.mode = 'prepared'", 'googleSheetCandidates', 'detectDelimiter', 'parseA1Range', 'normalizeSheetReadConfig', 'range:', 'mappingMode'
 ]) if (!worker.includes(required)) throw new Error(`Implementação ausente no Worker: ${required}`);
 
@@ -53,6 +53,17 @@ for (const required of ["api('/api/sheets/sync'", 'programPreviewUrl', '/api/ove
   if (!operator.includes(required)) throw new Error(`Operador incompleto: ${required}`);
 }
 
+for (const required of ['validateGlbHeader', 'validatedGlbStream', 'readBoundedGlb', 'MAX_ROOM_MEDIA_BYTES', 'mediaStorage:', "env.MEDIA_BUCKET.put(key, stream", "pathname === '/api/media/upload'"]) {
+  if (!worker.includes(required)) throw new Error(`Upload GLB incompleto no Worker: ${required}`);
+}
+for (const required of ['modelFileInput', 'modelUploadDrop', 'uploadModelFromComputer', 'maxModelUploadBytes', 'setUploadFeedback']) {
+  if (!operator.includes(required)) throw new Error(`Upload GLB incompleto no painel: ${required}`);
+}
+const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
+for (const required of ['id="modelFileInput"', 'id="modelUploadDrop"', 'id="browseModelButton"', 'id="modelUploadProgress"']) {
+  if (!html.includes(required)) throw new Error(`Input de upload ausente: ${required}`);
+}
+
 const cloud = await readFile(new URL('../public/js/cloud.js', import.meta.url), 'utf8');
 if (!cloud.includes("new URL('/overlay'")) throw new Error('Link de overlay não usa a rota /overlay.');
 
@@ -60,6 +71,11 @@ const wrangler = await readFile(new URL('../wrangler.jsonc', import.meta.url), '
 for (const route of ['/api/*','/camera/*','/cut/*','/play','/reset','/overlay']) {
   if (!wrangler.includes(route)) throw new Error(`Rota ausente: ${route}`);
 }
-if (wrangler.includes('r2_buckets') || wrangler.includes('MEDIA_BUCKET')) throw new Error('O deploy sem R2 não deve declarar MEDIA_BUCKET.');
+if (wrangler.includes('r2_buckets') || wrangler.includes('MEDIA_BUCKET')) throw new Error('Deploy padrão deve aceitar GLB sem R2.');
+const wranglerR2 = await readFile(new URL('../wrangler.r2.jsonc', import.meta.url), 'utf8');
+if (!wranglerR2.includes('MEDIA_BUCKET') || !wranglerR2.includes('broadcast3d-media')) throw new Error('Binding do R2 ausente.');
 
-console.log('Broadcast3D v0.8.4 validado: gráfico sem base, opacidade e altura inicial ajustáveis, nomes/imagens opcionais, escala fixa 0–100, PLAY sincronizado e deploy sem R2.');
+const glbTest = spawnSync(process.execPath, [new URL('./test-glb-upload.mjs', import.meta.url).pathname], { encoding: 'utf8' });
+if (glbTest.status !== 0) throw new Error(`Teste de upload falhou: ${glbTest.stderr || glbTest.stdout}`);
+console.log(glbTest.stdout.trim());
+console.log('Broadcast3D v0.8.5 validado: upload GLB direto (DO até 12 MB, R2 até 48 MB), URL alternativa, overlays sincronizados, Sheets e PLAY.');

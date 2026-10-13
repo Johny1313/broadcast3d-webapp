@@ -1,0 +1,42 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "broadcast3d-webapp",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-30",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": [
+      "/api/*",
+      "/camera/*",
+      "/cut/*",
+      "/play",
+      "/reset",
+      "/overlay",
+      "/program"
+    ]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ROOMS",
+        "class_name": "BroadcastRoom"
+      }
+    ]
+  },
+  "exports": {
+    "BroadcastRoom": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
+  "observability": {
+    "enabled": true
+  },
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "broadcast3d-media"
+    }
+  ]
+}

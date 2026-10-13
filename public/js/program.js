@@ -1,5 +1,5 @@
-import { BroadcastRenderer } from './renderer3d.js?v=0.8.4';
-import { api, connectSocket, getRoom } from './cloud.js?v=0.8.4';
+import { BroadcastRenderer } from './renderer3d.js?v=0.8.5';
+import { api, connectSocket, getRoom } from './cloud.js?v=0.8.5';
 
 const canvas = document.getElementById('programCanvas');
 const renderer = new BroadcastRenderer(canvas, { interactive: false });

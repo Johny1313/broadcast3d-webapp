@@ -1,3 +1,11 @@
+## v0.8.5 — 2026-10-13
+
+- Upload direto de GLB 2.0 via seletor/drag-and-drop no navegador, com progresso e feedback de erro.
+- Armazenamento persistente do Durable Object por sala (até 12 MB por arquivo), sem configuração de bucket.
+- Armazenamento R2 opt-in até 48 MB, com stream validado e URL compartilhada para outros computadores e overlay/vMix.
+- Mantidos GitHub Releases por URL, cenas existentes, texturas, animações, Sheets e quatro câmeras.
+- Manual de instalação/segurança/diagnóstico e validações para upload.
+
 ## 0.8.4
 
 - Remove a base PNG extrudada do gráfico.

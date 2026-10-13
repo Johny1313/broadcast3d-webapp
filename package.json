@@ -1,14 +1,16 @@
 {
   "name": "broadcast3d-cloudflare-webapp",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "private": true,
-  "description": "Webapp Broadcast3D com GLB por GitHub Releases, Google Sheets, gráfico sem base, opacidade, altura inicial e nomes/imagens opcionais.",
+  "description": "Webapp Broadcast3D com upload direto de GLB com armazenamento cloud e URLs do GitHub, Google Sheets, gráfico sem base, opacidade, altura inicial e nomes/imagens opcionais.",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "check": "node scripts/check.mjs",
-    "test": "npm run check"
+    "test": "npm run check",
+    "dev:r2": "wrangler dev --config wrangler.r2.jsonc",
+    "deploy:r2": "wrangler deploy --config wrangler.r2.jsonc"
   },
   "devDependencies": {
     "wrangler": "^4.113.0"

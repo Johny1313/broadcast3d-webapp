@@ -1,5 +1,5 @@
-import { BroadcastRenderer } from './renderer3d.js?v=0.8.4';
-import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programPreviewUrl, programUrl, setConnection, uploadMedia } from './cloud.js?v=0.8.4';
+import { BroadcastRenderer } from './renderer3d.js?v=0.8.5';
+import { api, cameraUrl, connectSocket, controlUrl, cutUrl, getRoom, getToken, programPreviewUrl, programUrl, setConnection, uploadMedia } from './cloud.js?v=0.8.5';
 
 const $ = id => document.getElementById(id);
 const DEG = Math.PI / 180;
@@ -14,6 +14,8 @@ let suppressInputs = false;
 let socketController = null;
 let sheetTimer = null;
 let sheetBusy = false;
+let modelUploadBusy = false;
+let maxModelUploadBytes = 12 * 1024 * 1024;
 
 function defaultLight(index = 1) {
   return {
@@ -602,11 +604,66 @@ async function validateModelFile(file, extension) {
   if (declaredLength !== file.size) throw new Error('O GLB está truncado ou possui tamanho interno incorreto.');
 }
 
-async function uploadFile(file, onProgress) {
-  const maxBytes = 48 * 1024 * 1024;
-  if (file.size > maxBytes) throw new Error('Arquivo maior que 48 MB. Otimize o modelo antes do upload.');
-  const result = await uploadMedia(file, onProgress);
-  return result.url;
+function setUploadFeedback(message, { error = false, progress = null } = {}) {
+  const feedback = $('modelUploadFeedback');
+  if (feedback) {
+    feedback.textContent = message;
+    feedback.classList.toggle('error', error);
+    feedback.classList.toggle('success', !error && progress === 100);
+  }
+  const bar = $('modelUploadProgress');
+  if (bar) {
+    bar.hidden = progress == null;
+    if (progress != null) bar.value = Math.max(0, Math.min(100, progress));
+  }
+}
+
+async function uploadModelFromComputer(file) {
+  if (!file || modelUploadBusy) return;
+  try {
+    if (!state) throw new Error('A sala ainda está conectando. Tente novamente após a conexão.');
+    if (!/\.glb$/i.test(file.name)) throw new Error('Selecione um arquivo .glb. Modelos GLTF/OBJ continuam disponíveis via URL.');
+    if (file.size > maxModelUploadBytes) throw new Error(maxModelUploadBytes > 12 * 1024 * 1024 ? 'Limite: 48 MB por GLB. Otimize o arquivo.' : 'Limite atual: 12 MB. Para GLBs maiores, ative o armazenamento R2 conforme o guia DEPLOY-CLOUDFLARE.md.');
+    await validateModelFile(file, 'glb');
+    modelUploadBusy = true;
+    const button = $('browseModelButton');
+    const leftButton = $('leftModelButton');
+    button.disabled = true;
+    leftButton.disabled = true;
+    openPanel('model');
+    setUploadFeedback(`Enviando ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)…`, { progress: 0 });
+    const roomAtStart = getRoom();
+    const result = await uploadMedia(file, (loaded, total) => {
+      const percent = total ? Math.round(loaded / total * 100) : 0;
+      setUploadFeedback(`Upload ${percent}% · ${file.name}`, { progress: Math.min(percent, 99) });
+    });
+    if (roomAtStart !== getRoom()) throw new Error('A sala foi alterada durante o upload. Volte à sala anterior.');
+    state.scene.model.url = result.url;
+    state.scene.model.sourceUrl = '';
+    state.scene.model.name = file.name;
+    state.scene.model.format = 'glb';
+    state.scene.model.visible = true;
+    state.scene.model.animation = { speed: 1 };
+    state.scene.playback.mode = 'preview';
+    state.scene.playback.startedAt = 0;
+    state.scene.playback.resetToken = Date.now();
+    availableAnimations = [];
+    renderer.setState(state);
+    renderAll();
+    // Persiste imediatamente e publica o modelo para as outras telas via WebSocket.
+    clearTimeout(saveTimer);
+    await api('/api/state', { method: 'POST', body: JSON.stringify(state) });
+    setUploadFeedback(`GLB enviado e compartilhado na sala ${roomAtStart}. Carregando a prévia…`, { progress: 100 });
+    showToast('Modelo salvo na nuvem · disponível em outros computadores e no vMix');
+  } catch (error) {
+    setUploadFeedback(error.message || 'Falha no upload.', { error: true });
+    showToast(error.message || 'Falha no upload.');
+  } finally {
+    modelUploadBusy = false;
+    $('browseModelButton').disabled = false;
+    $('leftModelButton').disabled = false;
+    $('modelFileInput').value = '';
+  }
 }
 
 function openPanel(name) {
@@ -728,6 +785,29 @@ function fileNameFromUrl(value) {
 }
 
 function bindUploads() {
+  const fileInput = $('modelFileInput');
+  const dropZone = $('modelUploadDrop');
+  const chooseFile = () => { if (!modelUploadBusy) fileInput.click(); };
+  $('browseModelButton').addEventListener('click', chooseFile);
+  fileInput.addEventListener('change', () => uploadModelFromComputer(fileInput.files?.[0]));
+  dropZone.addEventListener('click', chooseFile);
+  dropZone.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); chooseFile(); }
+  });
+  for (const eventName of ['dragenter', 'dragover']) {
+    dropZone.addEventListener(eventName, event => {
+      event.preventDefault();
+      if (!modelUploadBusy) dropZone.classList.add('dragover');
+    });
+  }
+  dropZone.addEventListener('dragleave', event => {
+    if (!dropZone.contains(event.relatedTarget)) dropZone.classList.remove('dragover');
+  });
+  dropZone.addEventListener('drop', event => {
+    event.preventDefault();
+    dropZone.classList.remove('dragover');
+    uploadModelFromComputer(event.dataTransfer?.files?.[0]);
+  });
 
   $('guideInput').addEventListener('change', () => {
     const file = $('guideInput').files[0];
@@ -912,8 +992,8 @@ function bindSheetControls() {
 
 function bindActions() {
   document.querySelectorAll('[data-cut]').forEach(button => button.addEventListener('click', () => cutCamera(Number(button.dataset.cut))));
-  $('quickModelButton').addEventListener('click', () => { openPanel('model'); $('modelUrlInput').focus(); });
-  $('leftModelButton').addEventListener('click', () => { openPanel('model'); $('modelUrlInput').focus(); });
+  $('quickModelButton').addEventListener('click', () => { openPanel('model'); $('modelFileInput').click(); });
+  $('leftModelButton').addEventListener('click', () => { openPanel('model'); $('modelFileInput').click(); });
   $('openModelControlsButton').addEventListener('click', () => openPanel('model'));
   $('quickSheetsButton').addEventListener('click', () => openPanel('sheets'));
   $('quickLightsButton').addEventListener('click', () => openPanel('lights'));
@@ -1076,6 +1156,17 @@ async function init() {
   setInterval(() => { if (state) renderPlaybackControls(); }, 250);
   try {
     await loadRoom();
+    try {
+      const capabilities = await api('/api/health');
+      if (Number.isFinite(Number(capabilities.maxUploadBytes)) && Number(capabilities.maxUploadBytes) > 0) {
+        maxModelUploadBytes = Number(capabilities.maxUploadBytes);
+      }
+      const storage = capabilities.mediaStorage === 'cloudflare-r2' ? 'R2 na nuvem' : 'armazenamento da sala';
+      const limit = Math.round(maxModelUploadBytes / (1024 * 1024));
+      $('modelStorageStatus').textContent = `${storage} ativo · limite por arquivo: ${limit} MB`;
+    } catch {
+      $('modelStorageStatus').textContent = 'Armazenamento da sala · até 12 MB sem R2';
+    }
   } catch (error) {
     setConnectionBadge('error');
     showToast(error.message);

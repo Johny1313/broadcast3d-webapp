@@ -2,6 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 
 const MAX_STATE_BYTES = 100 * 1024;
 const MAX_MEDIA_BYTES = 48 * 1024 * 1024;
+const MAX_ROOM_MEDIA_BYTES = 12 * 1024 * 1024;
 const MEDIA_CHUNK_BYTES = 96 * 1024;
 const DEFAULT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1XiDEtcuOuW1jfj8jX1JHxFgsbtbABAgTZuhZIYsWI6w/edit?usp=sharing';
 
@@ -508,6 +509,83 @@ function mediaContentType(extension, fallback = '') {
   return known[extension] || fallback || 'application/octet-stream';
 }
 
+function validateGlbHeader(header, fileSize) {
+  if (header.byteLength < 12 || fileSize < 20) throw new Error('GLB inválido ou incompleto.');
+  const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+  if (view.getUint32(0, true) !== 0x46546c67) throw new Error('Cabeçalho GLB inválido.');
+  if (view.getUint32(4, true) !== 2) throw new Error('Apenas GLB 2.0 é suportado.');
+  if (view.getUint32(8, true) !== fileSize) throw new Error('Tamanho declarado pelo GLB não corresponde ao arquivo.');
+}
+
+// Valida o cabeçalho antes da gravação sem materializar um GLB inteiro na memória do Worker.
+async function validatedGlbStream(body, expectedSize) {
+  const reader = body.getReader();
+  const prefixChunks = [];
+  let prefixSize = 0;
+  while (prefixSize < 12) {
+    const { value, done } = await reader.read();
+    if (done) throw new Error('GLB incompleto.');
+    prefixChunks.push(value);
+    prefixSize += value.byteLength;
+  }
+  const prefix = new Uint8Array(12);
+  let pos = 0;
+  for (const chunk of prefixChunks) {
+    const len = Math.min(chunk.byteLength, 12 - pos);
+    prefix.set(chunk.subarray(0, len), pos);
+    pos += len;
+    if (pos === 12) break;
+  }
+  validateGlbHeader(prefix, expectedSize);
+  let transferred = 0;
+  const stream = new ReadableStream({
+    async pull(controller) {
+      try {
+        const next = prefixChunks.length
+          ? { value: prefixChunks.shift(), done: false }
+          : await reader.read();
+        if (next.done) {
+          if (transferred !== expectedSize) throw new Error('Upload incompleto.');
+          controller.close();
+          return;
+        }
+        transferred += next.value.byteLength;
+        if (transferred > expectedSize || transferred > MAX_MEDIA_BYTES) throw new Error('Upload excedeu o tamanho declarado.');
+        controller.enqueue(next.value);
+      } catch (error) {
+        controller.error(error);
+        await reader.cancel(error).catch(() => {});
+      }
+    },
+    cancel(reason) { return reader.cancel(reason); }
+  });
+  return stream;
+}
+
+async function readBoundedGlb(body, maxBytes, expectedSize) {
+  const reader = body.getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes || size > expectedSize) throw new Error('Arquivo excedeu o limite do armazenamento da sala.');
+      chunks.push(value);
+    }
+  } catch (error) {
+    await reader.cancel(error).catch(() => {});
+    throw error;
+  }
+  if (size !== expectedSize) throw new Error('Upload incompleto.');
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  validateGlbHeader(bytes.subarray(0, 12), size);
+  return bytes;
+}
+
 function mediaObjectKey(room, assetId, extension) {
   return `${room}/${assetId}${extension}`;
 }
@@ -534,7 +612,7 @@ export default {
       }
       const headers = new Headers({
         accept: request.headers.get('accept') || '*/*',
-        'user-agent': 'Broadcast3D/0.8.4'
+        'user-agent': 'Broadcast3D/0.8.5'
       });
       const range = request.headers.get('range');
       if (range) headers.set('range', range);
@@ -557,10 +635,11 @@ export default {
       return json({
         ok: true,
         service: 'broadcast3d-cloudflare',
-        version: '0.8.4',
+        version: '0.8.5',
         realtime: 'durable-object-websocket',
-        storage: 'durable-object-sqlite + github-release-proxy',
-        mediaStorage: 'github-release-url',
+        storage: 'durable-object-sqlite + optional-cloudflare-r2',
+        mediaStorage: env.MEDIA_BUCKET ? 'cloudflare-r2' : 'durable-object-small-glb',
+        maxUploadBytes: env.MEDIA_BUCKET ? MAX_MEDIA_BYTES : MAX_ROOM_MEDIA_BYTES,
         authRequired: Boolean(String(env.CONTROL_TOKEN || '').trim())
       });
     }
@@ -570,35 +649,35 @@ export default {
       const room = sanitizeRoom(url.searchParams.get('room') || 'studio');
       if (!room) return json({ ok: false, error: 'Sala inválida.' }, 400);
       if (!canWrite(request, env)) return json({ ok: false, error: 'Chave de controle inválida.' }, 401);
-      if (!env.MEDIA_BUCKET) {
-        return json({ ok: false, error: 'Bucket R2 MEDIA_BUCKET não configurado. Crie o bucket broadcast3d-media e publique novamente.' }, 503);
-      }
       const fileSize = Number(request.headers.get('x-file-size') || request.headers.get('content-length') || 0);
-      if (!Number.isFinite(fileSize) || fileSize <= 0) return json({ ok: false, error: 'Arquivo vazio ou tamanho não informado.' }, 400);
-      if (fileSize > MAX_MEDIA_BYTES) return json({ ok: false, error: 'Arquivo maior que 48 MB.' }, 413);
-      if (!request.body) return json({ ok: false, error: 'Corpo do arquivo ausente.' }, 400);
-
-      const originalName = String(url.searchParams.get('name') || 'arquivo').slice(0, 180);
-      const incomingType = String(request.headers.get('content-type') || '').split(';')[0].trim();
-      const extension = safeMediaExtension(originalName, incomingType);
+      const max = env.MEDIA_BUCKET ? MAX_MEDIA_BYTES : MAX_ROOM_MEDIA_BYTES;
+      if (!Number.isSafeInteger(fileSize) || fileSize < 20) return json({ ok: false, error: 'Tamanho do GLB inválido.' }, 400);
+      if (fileSize > max) return json({ ok: false, error: env.MEDIA_BUCKET
+        ? 'Limite de 48 MB por GLB. Otimize o modelo.'
+        : 'Sem R2, o limite é de 12 MB por GLB. Habilite o Cloudflare R2 para modelos de até 48 MB.' }, 413);
+      if (!request.body) return json({ ok: false, error: 'Arquivo não enviado.' }, 400);
+      const originalName = String(url.searchParams.get('name') || 'modelo.glb').slice(0, 160);
+      if (safeMediaExtension(originalName) !== '.glb') return json({ ok: false, error: 'Selecione um arquivo .glb (GLB 2.0).' }, 415);
+      if (!env.MEDIA_BUCKET) {
+        // Durable Object fica disponível imediatamente após deploy, sem criar bucket R2.
+        return routeToRoom(request, env, room);
+      }
       const assetId = crypto.randomUUID();
-      const key = mediaObjectKey(room, assetId, extension);
-      const contentType = mediaContentType(extension, incomingType);
-
+      const key = mediaObjectKey(room, assetId, '.glb');
       try {
-        await env.MEDIA_BUCKET.put(key, request.body, {
-          httpMetadata: { contentType },
+        const stream = await validatedGlbStream(request.body, fileSize);
+        const object = await env.MEDIA_BUCKET.put(key, stream, {
+          httpMetadata: { contentType: 'model/gltf-binary' },
           customMetadata: { originalName, room, uploadedAt: new Date().toISOString() }
         });
-        return json({
-          ok: true,
-          id: assetId,
-          size: fileSize,
-          type: contentType,
-          url: `/api/media/${assetId}${extension}?room=${encodeURIComponent(room)}`
-        });
+        if (!object || object.size !== fileSize) {
+          await env.MEDIA_BUCKET.delete(key).catch(() => {});
+          throw new Error('Tamanho armazenado diferente do original.');
+        }
+        return json({ ok: true, id: assetId, size: object.size, storage: 'r2',
+          type: 'model/gltf-binary', url: `/api/media/${assetId}.glb?room=${encodeURIComponent(room)}` });
       } catch (error) {
-        return json({ ok: false, error: `Falha ao gravar no R2: ${error.message || error}` }, 500);
+        return json({ ok: false, error: `Falha ao salvar GLB no R2: ${error.message || error}` }, 400);
       }
     }
 
@@ -606,7 +685,7 @@ export default {
     if (r2MediaMatch && (request.method === 'GET' || request.method === 'HEAD' || request.method === 'DELETE')) {
       const room = sanitizeRoom(url.searchParams.get('room') || 'studio');
       if (!room) return new Response('Sala inválida.', { status: 400 });
-      if (!env.MEDIA_BUCKET) return new Response('Bucket R2 não configurado.', { status: 503 });
+      if (!env.MEDIA_BUCKET) return new Response('Arquivo R2 indisponível. Verifique a configuração MEDIA_BUCKET.', { status: 503 });
       const assetId = r2MediaMatch[1];
       const extension = r2MediaMatch[2].toLowerCase();
       const key = mediaObjectKey(room, assetId, extension);
@@ -670,7 +749,7 @@ export default {
       try {
         const stateResponse = await routeToRoom(new Request(`${url.origin}/api/state?room=${encodeURIComponent(room)}`), env, room);
         const statePayload = await stateResponse.json();
-        return json({ ok: true, version: '0.8.4', room, hasState: Boolean(statePayload?.state), activeCamera: statePayload?.state?.activeCamera || 1, itemCount: statePayload?.state?.scene?.items?.length || 0 });
+        return json({ ok: true, version: '0.8.5', room, hasState: Boolean(statePayload?.state), activeCamera: statePayload?.state?.activeCamera || 1, itemCount: statePayload?.state?.scene?.items?.length || 0 });
       } catch (error) {
         return json({ ok: false, error: error.message || 'Falha ao validar overlay.' }, 500);
       }
@@ -881,13 +960,45 @@ export class BroadcastRoom extends DurableObject {
       return json({ ok: true, outputVisible: state.outputVisible });
     }
 
+    if (pathname === '/api/media/upload' && request.method === 'POST') {
+      const fileSize = Number(request.headers.get('x-file-size') || 0);
+      if (!Number.isSafeInteger(fileSize) || fileSize < 20 || fileSize > MAX_ROOM_MEDIA_BYTES) {
+        return json({ ok: false, error: 'Sem R2, GLB deve ter no máximo 12 MB.' }, 413);
+      }
+      try {
+        const bytes = await readBoundedGlb(request.body, MAX_ROOM_MEDIA_BYTES, fileSize);
+        const assetId = crypto.randomUUID();
+        const chunks = Math.ceil(bytes.byteLength / MEDIA_CHUNK_BYTES);
+        const keys = [];
+        try {
+          for (let index = 0; index < chunks; index += 1) {
+            const part = bytes.slice(index * MEDIA_CHUNK_BYTES, Math.min((index + 1) * MEDIA_CHUNK_BYTES, bytes.byteLength));
+            const key = `media:${assetId}:chunk:${index}`;
+            await this.ctx.storage.put(key, part.buffer);
+            keys.push(key);
+          }
+          const metadata = { id: assetId, name: String(new URL(request.url).searchParams.get('name') || 'modelo.glb').slice(0, 160),
+            type: 'model/gltf-binary', size: bytes.byteLength, chunks, uploadedAt: new Date().toISOString() };
+          await this.ctx.storage.put(`media:${assetId}:meta`, metadata);
+        } catch (error) {
+          await this.ctx.storage.delete(keys).catch(() => {});
+          throw error;
+        }
+        const room = new URL(request.url).searchParams.get('room') || 'studio';
+        return json({ ok: true, id: assetId, storage: 'durable-object',
+          url: `/api/media/${assetId}?room=${encodeURIComponent(room)}`, size: bytes.byteLength, type: 'model/gltf-binary' });
+      } catch (error) {
+        return json({ ok: false, error: error.message || 'Falha ao armazenar GLB na sala.' }, 400);
+      }
+    }
+
     if (pathname === '/api/upload' && request.method === 'POST') {
       try {
         const body = await request.json();
         const match = String(body.dataUrl || '').match(/^data:([^;]*);base64,(.+)$/s);
         if (!match) throw new Error('Arquivo inválido.');
         const bytes = decodeBase64(match[2]);
-        if (bytes.byteLength > MAX_MEDIA_BYTES) throw new Error('Arquivo maior que 48 MB.');
+        if (bytes.byteLength > MAX_ROOM_MEDIA_BYTES) throw new Error('Upload legado limitado a 12 MB.');
         const assetId = crypto.randomUUID();
         const chunks = Math.ceil(bytes.byteLength / MEDIA_CHUNK_BYTES);
         for (let index = 0; index < chunks; index += 1) {

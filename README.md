@@ -1,4 +1,10 @@
-# Broadcast3D Cloud v0.8.4
+# Broadcast3D Cloud v0.8.5
+
+## Novidade: upload de modelos GLB de qualquer computador
+
+O painel agora tem **seleção de arquivo** e **arrastar/soltar**, com progresso, validação de GLB 2.0 e sincronização com overlay/vMix e outros computadores na mesma sala. **Até 12 MB sem configurar R2**; com R2 ligado, **até 48 MB por GLB**. A opção anterior de URL HTTPS do GitHub permanece funcionando. Veja [GUIA-UPLOAD-GLB.md](GUIA-UPLOAD-GLB.md) para o passo a passo.
+
+## Histórico da versão 0.8.4
 
 ## Gráfico limpo 0–100
 

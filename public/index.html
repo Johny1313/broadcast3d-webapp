@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Broadcast3D Cloud v0.8.4</title>
-  <link rel="stylesheet" href="/styles.css?v=0.8.4">
+  <title>Broadcast3D Cloud v0.8.5</title>
+  <link rel="stylesheet" href="/styles.css?v=0.8.5">
   <script type="importmap">
   {
     "imports": {
@@ -19,7 +19,7 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark">3D</div>
-        <div><strong>Broadcast3D Cloud <small class="version-badge">v0.8.4</small></strong><span>PLAY único para GLB + gráfico do Google Sheets · overlay transparente para vMix</span></div>
+        <div><strong>Broadcast3D Cloud <small class="version-badge">v0.8.5</small></strong><span>PLAY único para GLB + gráfico do Google Sheets · overlay transparente para vMix</span></div>
       </div>
       <div class="top-actions cloud-top-actions">
         <span id="connectionBadge" class="status-badge">Conectando</span>
@@ -39,7 +39,7 @@
 
     <section class="quick-actions workflow-actions" aria-label="Fluxo principal">
       <div class="quick-actions-title"><strong>Fluxo principal</strong><span>1. Modelo · 2. Dados · 3. PLAY · 4. Câmeras</span></div>
-      <button id="quickModelButton" class="quick-action primary-action" type="button"><span class="quick-icon">1</span><span><strong>Carregar GLB / OBJ por URL</strong><small>GitHub Release · todos os clipes aguardam o PLAY</small></span></button>
+      <button id="quickModelButton" class="quick-action primary-action" type="button"><span class="quick-icon">1</span><span><strong>Importar GLB do computador</strong><small>Upload compartilhado · PLAY com animações</small></span></button>
       <button id="quickSheetsButton" class="quick-action" type="button"><span class="quick-icon">2</span><span><strong>Google Sheets</strong><small>Substitui a importação por CSV</small></span></button>
       <button id="quickLightsButton" class="quick-action" type="button"><span class="quick-icon">3</span><span><strong>Ajustar luzes</strong><small>Ambiente e pontos de luz</small></span></button>
       <button id="quickLinksButton" class="quick-action" type="button"><span class="quick-icon">4</span><span><strong>Câmeras / Stream Deck</strong><small>Links reais CAM 1 a CAM 4</small></span></button>
@@ -49,7 +49,8 @@
       <aside class="sidebar left-panel">
         <section class="panel-section import-spotlight">
           <div class="section-title"><span>Modelo principal</span><span class="pill ready">GLB / OBJ</span></div>
-          <button id="leftModelButton" class="button primary full model-import-main" type="button">+ CARREGAR URL DO MODELO</button>
+          <button id="leftModelButton" class="button primary full model-import-main" type="button">+ IMPORTAR GLB DO COMPUTADOR</button>
+          <p class="helper">O GLB é enviado para a sala na nuvem e fica disponível no painel e no vMix em outros computadores.</p>
           <div id="modelQuickStatus" class="file-status prominent">Nenhum modelo carregado</div>
           <button id="openModelControlsButton" class="button secondary full" type="button">Abrir controles do modelo</button>
           <p class="helper">GLB e gráfico do Google Sheets podem ficar juntos. O PLAY inicia os dois; ao terminar, todos os elementos permanecem na tela.</p>
@@ -143,10 +144,23 @@
 
         <section class="tab-panel active" data-panel="model">
           <div class="section-title"><span>Modelo 3D principal</span><span id="modelFormatPill" class="pill">VAZIO</span></div>
-          <label class="field">URL do GLB ou OBJ no GitHub Release<input id="modelUrlInput" type="url" autocomplete="off" spellcheck="false" placeholder="https://github.com/.../releases/download/media-v1/modelo.glb"></label>
-          <button id="loadModelUrlButton" class="button primary full" type="button">CARREGAR MODELO DA URL</button>
+          <input id="modelFileInput" type="file" accept=".glb,model/gltf-binary" hidden>
+          <div id="modelUploadDrop" class="upload-drop model-upload-drop" role="button" tabindex="0" aria-label="Selecionar ou arrastar arquivo GLB">
+            <strong>↑ Arraste seu GLB aqui</strong>
+            <span>Ou clique para escolher um arquivo deste computador</span>
+            <span>GLB 2.0 · texturas incorporadas · 12 MB sem R2 · até 48 MB com R2</span>
+          </div>
+          <button id="browseModelButton" class="button primary full model-import-main" type="button">SELECIONAR ARQUIVO .GLB</button>
+          <div id="modelStorageStatus" class="model-storage-status">Verificando limite da sala…</div>
+          <div id="modelUploadFeedback" class="model-upload-feedback" role="status" aria-live="polite">Upload direto: compartilhe o mesmo modelo entre computadores pela sala.</div>
+          <progress id="modelUploadProgress" class="model-upload-progress" max="100" value="0" hidden aria-label="Progresso do upload do GLB"></progress>
           <div id="modelFileName" class="file-status">Nenhum modelo carregado</div>
-          <div class="model-import-rule">O Worker usa um proxy seguro para o GitHub. O modelo fica acessível no overlay em computadores e redes diferentes.</div>
+          <details class="model-url-alternative">
+            <summary>Alternativa: carregar modelo pela URL do GitHub</summary>
+            <label class="field">URL HTTPS do GLB ou OBJ<input id="modelUrlInput" type="url" autocomplete="off" spellcheck="false" placeholder="https://github.com/.../releases/download/media-v1/modelo.glb"></label>
+            <button id="loadModelUrlButton" class="button secondary full" type="button">CARREGAR DA URL</button>
+          </details>
+          <div class="model-import-rule">O upload salva o GLB na nuvem para que painel e overlay usem a mesma URL. Sem R2, modelos de até 12 MB; habilite R2 para até 48 MB.</div>
           <label class="switch-row"><input id="modelVisible" type="checkbox"><span>Exibir modelo</span></label>
 
           <label class="range-field">Posição X <output id="modelXOutput"></output><input id="modelX" type="range" min="-12" max="12" step="0.01"></label>
@@ -324,6 +338,6 @@
     </div>
   </dialog>
 
-  <script type="module" src="/js/operator.js?v=0.8.4"></script>
+  <script type="module" src="/js/operator.js?v=0.8.5"></script>
 </body>
 </html>
